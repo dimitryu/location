@@ -19,12 +19,12 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.0.1";
+const APP_VERSION        = "1.0.2";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
 // 🔥 REPLACE WITH YOUR FIREBASE CONFIG (Firebase Console → Project Settings)
-const firebaseConfig = {
+const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBi1RUxou3oFhsVVilN0CulCBSPobbZMao",
   authDomain: "location-56469.firebaseapp.com",
   projectId: "location-56469",
@@ -764,6 +764,9 @@ function initFirebase() {
     auth = firebase.auth();
     db   = firebase.firestore();
 
+    // Handle Google redirect result first
+    await handleRedirectResult();
+
     // Fallback: if onAuthStateChanged never fires within 8s, show auth screen
     const splashTimeout = setTimeout(() => {
       console.warn('Firebase timeout — showing auth');
@@ -866,8 +869,26 @@ async function doRegister() {
 async function doGoogle() {
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
-    await auth.signInWithPopup(provider);
-  } catch(e) { showToast(t('errLogin'),'err'); }
+    // signInWithRedirect works better on GitHub Pages / mobile
+    await auth.signInWithRedirect(provider);
+  } catch(e) {
+    showToast(t('errLogin') + ': ' + e.message, 'err');
+  }
+}
+
+// Handle redirect result on page load
+async function handleRedirectResult() {
+  try {
+    const result = await auth.getRedirectResult();
+    if (result && result.user) {
+      // Successfully signed in via redirect — onAuth will handle the rest
+    }
+  } catch(e) {
+    console.error('Redirect result error:', e);
+    if (e.code !== 'auth/no-auth-event') {
+      showToast(t('errLogin') + ': ' + e.message, 'err');
+    }
+  }
 }
 
 async function doLogout() {
