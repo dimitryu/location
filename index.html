@@ -19,7 +19,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.0.3";
+const APP_VERSION        = "1.0.4";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -77,8 +77,8 @@ button{font-family:inherit;cursor:pointer}
 .ll{font-size:80px;animation:bounce 1.8s ease-in-out infinite}
 .lt{color:#fff;font-size:28px;font-weight:900;margin-top:16px}
 .ls{color:rgba(255,255,255,.7);font-size:14px;margin-top:8px}
-.lver{color:rgba(255,255,255,.45);font-size:12px;font-weight:800;margin-top:10px;letter-spacing:1px}
-.lsp{width:38px;height:38px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;margin-top:32px}
+.lver{color:rgba(255,255,255,.4);font-size:11px;font-weight:800;margin-top:8px;letter-spacing:1px}
+.lsp{width:38px;height:38px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;margin-top:28px}
 @keyframes bounce{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-14px) rotate(4deg)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -375,7 +375,7 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v1.0.3</div>
+  <div class="lver" id="lVer">v1.0.4</div>
   <div class="lsp"></div>
 </div>
 
@@ -384,7 +384,7 @@ select.lang-sel{
   <div class="al">📍</div>
   <div class="at">Family Location</div>
   <div class="as" id="aSubT">מעקב מיקום משפחתי חכם</div>
-  <div style="font-size:11px;color:var(--text2);margin-bottom:16px;font-weight:800">v<span id="verAuth">1.0.3</span></div>
+  <div style="font-size:11px;color:var(--text2);font-weight:800;margin-bottom:12px">v<span id="verAuth">1.0.4</span></div>
   <div class="acard">
     <div class="atabs">
       <div class="atab on" id="tabLogin" onclick="switchAuthTab('login')" id="tabLoginBtn"></div>
@@ -425,7 +425,7 @@ select.lang-sel{
   <div class="ol">👨‍👩‍👧‍👦</div>
   <div class="ot" id="obTitle"></div>
   <div class="os" id="obSub"></div>
-  <div style="font-size:11px;color:var(--text2);margin-bottom:16px;font-weight:800">v<span id="verOnboard">1.0.3</span></div>
+  <div style="font-size:11px;color:var(--text2);font-weight:800;margin-bottom:12px">v<span id="verOnboard">1.0.4</span></div>
   <div class="oo" onclick="showCreateGroup()">
     <div class="oo-ico">➕</div>
     <div><div class="oo-h" id="obCreate"></div><div class="oo-s" id="obCreateS"></div></div>
@@ -566,7 +566,7 @@ select.lang-sel{
         </div>
 
         <div style="text-align:center;padding:16px 0;color:var(--text2);font-size:12px">
-          Family Location v<span id="verFoot">1.0.3</span> · dimitryu
+          Family Location v<span id="verFoot">1.0.1</span> · dimitryu
         </div>
       </div>
     </div>
@@ -761,21 +761,17 @@ const t = k => (TR[lang]||TR.en)[k] || (TR.en[k]) || k;
 // ══════════════════════════════════════════════
 async function initFirebase() {
   try {
-    // Prevent double-init
     if (!firebase.apps.length) {
       firebase.initializeApp(FIREBASE_CONFIG);
     }
     auth = firebase.auth();
     db   = firebase.firestore();
 
-    // Handle Google redirect result first
-    await handleRedirectResult();
-
-    // Fallback: if onAuthStateChanged never fires within 8s, show auth screen
+    // Fallback: if onAuthStateChanged never fires within 8s, show auth
     const splashTimeout = setTimeout(() => {
-      console.warn('Firebase timeout — showing auth');
       hideSplash();
       showView('vAuth');
+      renderUI();
     }, 8000);
 
     auth.onAuthStateChanged(user => {
@@ -786,6 +782,7 @@ async function initFirebase() {
     console.error('Firebase init error:', e);
     hideSplash();
     showView('vAuth');
+    renderUI();
     showToast('Firebase error: ' + e.message, 'err');
   }
 }
@@ -871,26 +868,30 @@ async function doRegister() {
 }
 
 async function doGoogle() {
+  const provider = new firebase.auth.GoogleAuthProvider();
   try {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    // signInWithRedirect works better on GitHub Pages / mobile
-    await auth.signInWithRedirect(provider);
+    // Popup works now that dimitryu.github.io is an authorized domain
+    await auth.signInWithPopup(provider);
   } catch(e) {
-    showToast(t('errLogin') + ': ' + e.message, 'err');
+    if (e.code === 'auth/popup-blocked') {
+      // Mobile fallback — no popup allowed
+      showToast('מאשר הפניה...', '');
+      setTimeout(() => auth.signInWithRedirect(provider), 500);
+    } else if (e.code === 'auth/popup-closed-by-user') {
+      // user dismissed, do nothing
+    } else {
+      showToast(t('errLogin') + ': ' + e.message, 'err');
+    }
   }
 }
 
-// Handle redirect result on page load
+// Handle redirect result (for mobile fallback only)
 async function handleRedirectResult() {
   try {
-    const result = await auth.getRedirectResult();
-    if (result && result.user) {
-      // Successfully signed in via redirect — onAuth will handle the rest
-    }
+    await auth.getRedirectResult();
   } catch(e) {
-    console.error('Redirect result error:', e);
-    if (e.code !== 'auth/no-auth-event') {
-      showToast(t('errLogin') + ': ' + e.message, 'err');
+    if (e.code && e.code !== 'auth/no-auth-event') {
+      console.error('Redirect result error:', e);
     }
   }
 }
@@ -1563,11 +1564,10 @@ function renderUI() {
   setText('hdrTitle','app_name');
   // Privacy
   document.getElementById('privLbl') && (document.getElementById('privLbl').textContent = isHidden ? t('privOff') : t('privOn'));
-  // Versions — all screens
-  ['verBadge','verFoot','verAuth','verOnboard','lVer'].forEach(id => {
-    const e=document.getElementById(id);
-    if(e) e.textContent = id==='lVer' ? 'v'+APP_VERSION : APP_VERSION;
-  });
+  // Versions — injected into every screen
+  const vids = ['verBadge','verFoot','verAuth','verOnboard'];
+  vids.forEach(id => { const e=document.getElementById(id); if(e) e.textContent=APP_VERSION; });
+  const lv = document.getElementById('lVer'); if(lv) lv.textContent='v'+APP_VERSION;
   // Lang selects
   ['langAuth','langSett'].forEach(id => { const e=document.getElementById(id); if(e) e.value=lang; });
   renderSettings();
