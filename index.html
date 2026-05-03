@@ -19,7 +19,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.1.0";
+const APP_VERSION        = "1.2.0";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -162,13 +162,18 @@ button{font-family:inherit;cursor:pointer}
   box-shadow:var(--shadow);display:flex;align-items:center;gap:6px;color:var(--text);
 }
 .m-priv.hid{background:var(--red);color:#fff}
-.m-fab{
-  position:absolute;bottom:20px;right:20px;z-index:1000;
-  background:var(--primary);color:#fff;border:none;border-radius:50%;
-  width:52px;height:52px;font-size:26px;cursor:pointer;
-  box-shadow:0 4px 14px rgba(26,115,232,.4);
-  display:flex;align-items:center;justify-content:center;
+/* Map FAB buttons - bottom right */
+.map-fabs{position:absolute;bottom:80px;right:14px;z-index:1000;display:flex;flex-direction:column;gap:10px}
+.map-fab-btn{
+  width:46px;height:46px;border-radius:50%;border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:20px;
+  box-shadow:0 3px 12px rgba(0,0,0,.25);font-family:inherit;
 }
+.map-fab-center{background:var(--primary);color:#fff}
+.map-fab-add{background:var(--green);color:#fff;font-size:26px}
+/* Move Leaflet zoom to avoid overlap with member selector */
+.leaflet-top.leaflet-left{display:none}
+.leaflet-bottom.leaflet-right .leaflet-control-zoom{margin-bottom:140px;margin-right:8px}
 .add-hint{
   position:absolute;bottom:80px;left:50%;transform:translateX(-50%);z-index:1000;
   background:rgba(0,0,0,.75);color:#fff;padding:10px 20px;border-radius:20px;
@@ -198,9 +203,25 @@ button{font-family:inherit;cursor:pointer}
   justify-content:center;font-size:17px;font-weight:900;color:#fff;flex-shrink:0;
 }
 .metric-name{font-size:15px;font-weight:700}
-.metric-row{display:flex;gap:16px;margin-top:6px}
+.metric-row{display:flex;gap:16px;margin-top:6px;flex-wrap:wrap}
 .metric-val{font-size:13px;color:var(--text2)}
 .metric-val b{color:var(--text);font-size:15px}
+.metric-btns{display:flex;gap:6px;margin-top:8px}
+/* Log entry */
+.log-entry{
+  background:var(--card);border-radius:12px;padding:12px 14px;
+  margin-bottom:8px;box-shadow:var(--shadow);
+  display:flex;align-items:flex-start;gap:12px;
+}
+.log-dot{width:10px;height:10px;border-radius:50%;background:var(--primary);margin-top:4px;flex-shrink:0}
+.log-addr{font-size:14px;font-weight:600}
+.log-time{font-size:12px;color:var(--text2);margin-top:3px}
+/* Route legend */
+.route-stop-marker{
+  background:var(--primary);color:#fff;border-radius:50%;
+  width:24px;height:24px;display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:900;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);
+}
 /* Member selector on map */
 .m-sel{
   position:absolute;top:12px;left:12px;z-index:1001;
@@ -512,23 +533,28 @@ select.lang-sel{
     <!-- MAP -->
     <div class="tp on" id="tp-map">
       <div id="map"></div>
-      <!-- Privacy btn -->
+      <!-- Privacy btn top-right -->
       <button class="m-priv no-print" id="privBtn" onclick="togglePrivacy()">
         <span id="privIco">👁️</span><span id="privLbl"></span>
       </button>
-      <!-- Member selector -->
-      <div class="m-sel no-print" id="memberSel">
+      <!-- Member selector top-left (below zoom) -->
+      <div class="m-sel no-print" id="memberSel" style="top:56px">
         <button class="m-sel-btn" onclick="toggleMemberSel()">
           <span id="selIcon">👥</span><span id="selName"></span>
         </button>
         <div class="m-sel-drop" id="selDrop"></div>
+      </div>
+      <!-- FABs bottom-right -->
+      <div class="map-fabs no-print">
+        <button class="map-fab-btn map-fab-center" onclick="centerOnMe()" title="מרכז עליי">🎯</button>
+        <button class="map-fab-btn map-fab-add" onclick="startAddPoint()" title="הוסף נקודה">＋</button>
       </div>
       <!-- Add point hint -->
       <div class="add-hint no-print" id="addHint" hidden>
         <span id="addHintTxt"></span>
         <button onclick="cancelAddPoint()">✕</button>
       </div>
-      <!-- Members overlay (right side) -->
+      <!-- Members overlay right side -->
       <div id="memsOverlay" class="no-print" style="position:absolute;top:64px;right:12px;z-index:999;display:flex;flex-direction:column;gap:6px;max-width:150px"></div>
     </div>
 
@@ -538,7 +564,6 @@ select.lang-sel{
         <div class="sec-h" id="ptTitle"></div>
         <div id="ptList"></div>
       </div>
-      <button class="fab no-print" onclick="startAddPoint()" title="+">＋</button>
     </div>
 
     <!-- GROUP -->
@@ -559,6 +584,8 @@ select.lang-sel{
         <div class="sec-h" id="metTitle"></div>
         <div style="font-size:13px;color:var(--text2);margin-bottom:14px" id="metDate"></div>
         <div id="metList"></div>
+        <div class="sec-h" id="logTitleEl" style="margin-top:16px"></div>
+        <div id="logList"></div>
       </div>
     </div>
 
@@ -603,27 +630,16 @@ select.lang-sel{
               <span class="sw-sl"></span>
             </label>
           </div>
-          <div class="si" onclick="centerOnMe()">
-            <span class="si-ico">🎯</span>
-            <span class="si-txt" id="sCenter"></span>
-          </div>
         </div>
 
         <div class="sg" id="sgInstall">
           <div class="sl" id="sInstLbl">התקנה</div>
-          <!-- Android Chrome native prompt -->
+          <!-- Native install prompt (Android Chrome / Desktop) -->
           <div class="si" id="siInstall" onclick="doInstallPWA()" style="display:none">
             <span class="si-ico">📲</span>
             <span class="si-txt" id="sInstall">התקן כאפליקציה</span>
-            <span class="si-val">Android</span>
           </div>
-          <!-- Android manual fallback -->
-          <div class="si" id="siInstallShare" onclick="showAndroidInstall()" style="display:none">
-            <span class="si-ico">📲</span>
-            <span class="si-txt" id="sInstallShare">הוסף למסך הבית</span>
-            <span class="si-val">Android</span>
-          </div>
-          <!-- iOS -->
+          <!-- iOS: Add to Home Screen -->
           <div class="si" id="siInstallIOS" onclick="showIOSInstall()" style="display:none">
             <span class="si-ico">📲</span>
             <span class="si-txt" id="sInstallIOS">הוסף למסך הבית</span>
@@ -633,6 +649,11 @@ select.lang-sel{
           <div class="si" id="siInstalled" style="display:none;cursor:default">
             <span class="si-ico">✅</span>
             <span class="si-txt" id="sInstalled">מותקן על המכשיר</span>
+          </div>
+          <!-- Waiting for prompt -->
+          <div class="si" id="siInstallWait" style="display:none;cursor:default;opacity:.6">
+            <span class="si-ico">⏳</span>
+            <span class="si-txt" id="sInstallWait">ממתין לאישור Chrome...</span>
           </div>
         </div>
 
@@ -791,6 +812,10 @@ const TR = {
     metTitle:'מדדים יומיים',metToday:'היום',metKm:'ק"מ',metSteps:'צעדים',metNoData:'אין נתונים להיום',
     allMembers:'כל חברי הקבוצה',selectMember:'בחר חבר',
     motionWalk:'הולך',motionCycle:'אופניים',motionDrive:'נוסע',motionStill:'עומד',
+    logTitle:'לוג מיקומים',logStayed:'שהה',logMins:'דק׳',logNoData:'אין נתוני מיקום',
+    routeTitle:'מסלול יומי',showRoute:'הצג מסלול',hideRoute:'הסתר מסלול',
+    routeStop:'עצירה',routeNoData:'אין נתוני מסלול',
+    sInstallWait:'ממתין לאישור...',
     sInst:'התקנה',sInstall:'התקן כאפליקציה',sInstallShare:'הוסף למסך הבית',sInstallIOS:'הוסף למסך הבית (iOS)',sInstalled:'מותקן על המכשיר',
     iosInstTitle:'התקנה על iPhone',iosInstStep1:'לחץ על כפתור השיתוף',iosInstStep2:'בחר "הוסף למסך הבית"',iosInstStep3:'לחץ "הוסף" לאישור',
     androidInstTitle:'התקנה על Android',androidInstStep1:'לחץ על תפריט ⋮ (שלוש נקודות) בכרום',androidInstStep2:'בחר "הוסף למסך הבית" או "התקן אפליקציה"',androidInstStep3:'לחץ "הוסף" לאישור',
@@ -831,6 +856,10 @@ const TR = {
     metTitle:'Daily Stats',metToday:'Today',metKm:'km',metSteps:'steps',metNoData:'No data for today',
     allMembers:'All members',selectMember:'Select member',
     motionWalk:'Walking',motionCycle:'Cycling',motionDrive:'Driving',motionStill:'Still',
+    logTitle:'Location Log',logStayed:'stayed',logMins:'min',logNoData:'No location data',
+    routeTitle:'Daily Route',showRoute:'Show route',hideRoute:'Hide route',
+    routeStop:'Stop',routeNoData:'No route data',
+    sInstallWait:'Waiting for Chrome...',
     sInst:'INSTALL',sInstall:'Install as App',sInstallShare:'Add to Home Screen',sInstallIOS:'Add to Home Screen (iOS)',sInstalled:'Installed on device',
     iosInstTitle:'Install on iPhone',iosInstStep1:'Tap the Share button',iosInstStep2:'Choose "Add to Home Screen"',iosInstStep3:'Tap "Add" to confirm',
     androidInstTitle:'Install on Android',androidInstStep1:'Tap ⋮ menu in Chrome',androidInstStep2:'Choose "Add to Home Screen" or "Install App"',androidInstStep3:'Tap "Add" to confirm',
@@ -871,6 +900,10 @@ const TR = {
     metTitle:'Статистика за день',metToday:'Сегодня',metKm:'км',metSteps:'шагов',metNoData:'Нет данных за сегодня',
     allMembers:'Все участники',selectMember:'Выбрать участника',
     motionWalk:'Ходит',motionCycle:'Велосипед',motionDrive:'Едет',motionStill:'Стоит',
+    logTitle:'Журнал мест',logStayed:'пробыл',logMins:'мин',logNoData:'Нет данных о местах',
+    routeTitle:'Дневной маршрут',showRoute:'Показать маршрут',hideRoute:'Скрыть маршрут',
+    routeStop:'Остановка',routeNoData:'Нет данных маршрута',
+    sInstallWait:'Ожидание Chrome...',
     sInst:'УСТАНОВКА',sInstall:'Установить как приложение',sInstallShare:'Добавить на экран',sInstallIOS:'Добавить на экран (iOS)',sInstalled:'Установлено на устройстве',
     iosInstTitle:'Установка на iPhone',iosInstStep1:'Нажмите кнопку «Поделиться»',iosInstStep2:'Выберите «На экран Домой»',iosInstStep3:'Нажмите «Добавить»',
     androidInstTitle:'Установка на Android',androidInstStep1:'Нажмите ⋮ меню в Chrome',androidInstStep2:'Выберите «Добавить на главный экран»',androidInstStep3:'Нажмите «Добавить»',
@@ -1203,13 +1236,14 @@ function initMap() {
   if (mapInit) return;
   mapInit = true;
   const el = document.getElementById('map');
-  mapObj = L.map(el, { zoomControl: true, attributionControl: false })
+  mapObj = L.map(el, { zoomControl: false, attributionControl: false })
     .setView([31.7683, 35.2137], 10);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '© OpenStreetMap'
   }).addTo(mapObj);
   L.control.attribution({ prefix: false }).addTo(mapObj);
-  // Click to add point
+  // Zoom control at bottom-right (above FABs)
+  L.control.zoom({ position: 'bottomright' }).addTo(mapObj);
   mapObj.on('click', onMapClick);
   setTimeout(() => mapObj.invalidateSize(), 200);
 }
@@ -1258,7 +1292,7 @@ async function savePoint(lat, lng) {
     name, lat, lng, radius, createdBy: me.uid, createdAt: new Date()
   });
   closeModal();
-  showToast('✅ '+name,'ok');
+  showToastLong('✅ '+name,'ok');
   switchTab('points');
 }
 
@@ -1449,18 +1483,16 @@ function subLocations() {
 function updateMemberMarker(uid, data) {
   if (!mapObj) return;
 
-  // ── Permission check: can I (me.uid) see this member? ──
+  // Permission check
   const perms = groupData?.permissions || {};
-  const whoCanSeeUid = perms[uid]; // array of UIDs allowed to see uid, or undefined
+  const whoCanSeeUid = perms[uid];
   const canSee = !whoCanSeeUid || whoCanSeeUid.length === 0 || whoCanSeeUid.includes(me.uid);
 
-  // Remove marker if: hidden, no data, or no permission
   if (!data.lat || data.hidden || !canSee) {
     if (memberMarkers[uid]) { mapObj.removeLayer(memberMarkers[uid]); delete memberMarkers[uid]; }
     return;
   }
 
-  // Focus filter: if a member is selected, hide others
   if (focusedMember && focusedMember !== uid) {
     if (memberMarkers[uid]) { mapObj.removeLayer(memberMarkers[uid]); delete memberMarkers[uid]; }
     return;
@@ -1471,17 +1503,24 @@ function updateMemberMarker(uid, data) {
   const motion = data.motion || null;
   const motionEmoji = motion && MOTION_EMOJI[motion] ? MOTION_EMOJI[motion] : '';
 
-  // Overlap offset: spread markers that are too close (<30m)
-  let lat = data.lat, lng = data.lng;
-  const nearby = Object.entries(memberMarkers).filter(([id]) => id !== uid);
-  let offset = 0;
-  nearby.forEach(([,m]) => {
-    if (haversine(lat, lng, m.getLatLng().lat, m.getLatLng().lng) < 25) offset++;
+  // ── Cluster spread: collect all visible members near this point ──
+  const CLUSTER_DIST = 30; // meters
+  const allVisible = Object.entries(members).filter(([id, d]) => {
+    if (id === uid) return false;
+    if (!d.lat || d.hidden) return false;
+    return haversine(data.lat, data.lng, d.lat, d.lng) < CLUSTER_DIST;
   });
-  if (offset > 0) {
-    const angle = (offset * 60) * Math.PI / 180;
-    lat += 0.00018 * Math.cos(angle);
-    lng += 0.00018 * Math.sin(angle);
+
+  let lat = data.lat, lng = data.lng;
+  if (allVisible.length > 0) {
+    // Assign a stable index based on uid sort order among clustered members
+    const cluster = [...allVisible.map(([id]) => id), uid].sort();
+    const idx = cluster.indexOf(uid);
+    const total = cluster.length;
+    const SPREAD = 0.00025; // ~28m spread radius
+    const angle = (idx / total) * 2 * Math.PI - Math.PI / 2;
+    lat = data.lat + SPREAD * Math.cos(angle);
+    lng = data.lng + SPREAD * Math.sin(angle);
   }
 
   const motionBadge = motionEmoji ? `<div class="mm-motion">${motionEmoji}</div>` : '';
@@ -1532,7 +1571,7 @@ function checkGeofencing(lat, lng) {
 function sendArrivalNotif(name) {
   if (!notifEnabled) return;
   const msg = `${t('arriveAt')}: ${name}`;
-  showToast('📍 '+msg,'ok');
+  showToastLong('📍 '+msg,'ok');
   if (Notification.permission === 'granted') {
     new Notification('📍 Family Location', { body: msg, icon: 'icons/icon.svg' });
   }
@@ -1774,13 +1813,17 @@ function closeModalOuter(e) { if (e.target === document.getElementById('modal'))
 //  TOAST
 // ══════════════════════════════════════════════
 let toastTimer;
-function showToast(msg, type='') {
+function showToast(msg, type='', duration=4000) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = 'toast ' + type + ' show';
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.className = 'toast ' + type, 2800);
+  // Arrivals and point adds stay 8s, others 4s, max 10s
+  const ms = Math.min(duration, 10000);
+  toastTimer = setTimeout(() => el.className = 'toast ' + type, ms);
 }
+
+function showToastLong(msg, type='') { showToast(msg, type, 8000); }
 
 // ══════════════════════════════════════════════
 //  CONFETTI
@@ -1836,64 +1879,40 @@ window.addEventListener('appinstalled', () => {
 
 function updateInstallUI() {
   const elPrompt = document.getElementById('siInstall');
-  const elShare  = document.getElementById('siInstallShare');
   const elIOS    = document.getElementById('siInstallIOS');
   const elDone   = document.getElementById('siInstalled');
+  const elWait   = document.getElementById('siInstallWait');
   if (!elPrompt) return;
 
-  // Refresh translated labels
   setText('sInstLbl','sInst');
   setText('sInstall','sInstall');
-  setText('sInstallShare','sInstallShare');
   setText('sInstallIOS','sInstallIOS');
   setText('sInstalled','sInstalled');
+  setText('sInstallWait','sInstallWait');
 
   const hide = el => { if(el) el.style.display='none'; };
   const show = el => { if(el) el.style.display='flex'; };
-
-  hide(elPrompt); hide(elShare); hide(elIOS); hide(elDone);
+  hide(elPrompt); hide(elIOS); hide(elDone); hide(elWait);
 
   if (isInStandaloneMode) {
     show(elDone);
   } else if (deferredInstallPrompt) {
-    // Best case: Chrome offers native prompt
     show(elPrompt);
   } else if (isIOS) {
     show(elIOS);
   } else {
-    // Android/Chrome but prompt not ready — show manual instructions
-    show(elShare);
+    // Android/Chrome - prompt not ready yet (browser hasn't decided)
+    show(elWait);
   }
 }
 
 async function doInstallPWA() {
-  if (!deferredInstallPrompt) { showAndroidInstall(); return; }
+  if (!deferredInstallPrompt) return;
   try {
     deferredInstallPrompt.prompt();
     const { outcome } = await deferredInstallPrompt.userChoice;
     if (outcome === 'accepted') { deferredInstallPrompt = null; updateInstallUI(); }
-  } catch(e) { showAndroidInstall(); }
-}
-
-function showAndroidInstall() {
-  openModal(`
-    <div class="mttl">📲 ${t('androidInstTitle')}</div>
-    <div style="display:flex;flex-direction:column;gap:12px;margin:16px 0">
-      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
-        <span style="font-size:26px">1️⃣</span>
-        <div style="font-weight:700;font-size:14px">${t('androidInstStep1')}</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
-        <span style="font-size:26px">2️⃣</span>
-        <div style="font-weight:700;font-size:14px">${t('androidInstStep2')}</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
-        <span style="font-size:26px">3️⃣</span>
-        <div style="font-weight:700;font-size:14px">${t('androidInstStep3')}</div>
-      </div>
-    </div>
-    <button class="btn btn-p" onclick="closeModal()">${t('cancel')}</button>
-  `);
+  } catch(e) { console.error('Install error:', e); }
 }
 
 function showIOSInstall() {
@@ -1921,19 +1940,56 @@ function showIOSInstall() {
 }
 
 // ══════════════════════════════════════════════
-//  METRICS
+//  METRICS + LOG + ROUTE
 // ══════════════════════════════════════════════
-const STEPS_PER_KM = 1300;
+const STEPS_PER_KM  = 1300;
+const STAY_DIST_M   = 50;   // consider "staying" if moved <50m
+const STAY_MIN_MS   = 30 * 60 * 1000; // 30 minutes
+let stayCandidate   = null; // {lat, lng, startTs, motion}
+let activeRoute     = null; // L.layerGroup on map
+let trackPoints     = [];   // [{lat,lng,ts,motion}] for today
 
 async function updateMetrics(lat, lng, motion) {
   if (!me || !groupId) return;
+  const now = Date.now();
+  const today = new Date().toISOString().slice(0,10);
+
+  // ── Track point for daily route ──
+  trackPoints.push({ lat, lng, ts: now, motion: motion||'still' });
+  // Save track every 5 points to Firestore (batch)
+  if (trackPoints.length % 5 === 0) {
+    const docId = `${groupId}_${me.uid}_${today}`;
+    db.collection('tracks').doc(docId).set({
+      uid: me.uid, groupId, date: today,
+      name: myProfile?.name || me.email,
+      points: firebase.firestore.FieldValue.arrayUnion(...trackPoints.slice(-5).map(p => ({
+        lat: p.lat, lng: p.lng, ts: p.ts, motion: p.motion
+      })))
+    }, {merge: true}).catch(()=>{});
+  }
+
+  // ── Stay detection for log ──
+  if (!stayCandidate) {
+    stayCandidate = { lat, lng, startTs: now, motion };
+  } else {
+    const moved = haversine(stayCandidate.lat, stayCandidate.lng, lat, lng);
+    if (moved > STAY_DIST_M) {
+      // User moved — check if previous stay was long enough
+      const duration = now - stayCandidate.startTs;
+      if (duration >= STAY_MIN_MS) {
+        saveLocationLog(stayCandidate.lat, stayCandidate.lng, stayCandidate.startTs, now);
+      }
+      stayCandidate = { lat, lng, startTs: now, motion };
+    }
+  }
+
+  // ── Distance metrics ──
   if (!lastMetricPos) { lastMetricPos = {lat, lng}; return; }
   const dist = haversine(lastMetricPos.lat, lastMetricPos.lng, lat, lng);
-  if (dist < 8) return; // ignore micro-movements
+  if (dist < 8) return;
   lastMetricPos = {lat, lng};
   const distKm = dist / 1000;
   const steps = motion === 'walking' ? Math.round(distKm * STEPS_PER_KM) : 0;
-  const today = new Date().toISOString().slice(0,10);
   try {
     await db.collection('metrics').doc(`${groupId}_${me.uid}_${today}`).set({
       uid: me.uid, groupId, date: today,
@@ -1945,46 +2001,171 @@ async function updateMetrics(lat, lng, motion) {
   } catch(e) { /* fail silently */ }
 }
 
+async function saveLocationLog(lat, lng, startTs, endTs) {
+  const today = new Date().toISOString().slice(0,10);
+  const durationMin = Math.round((endTs - startTs) / 60000);
+  // Reverse geocode via Nominatim (OSM)
+  let address = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
+      headers: {'Accept-Language': lang}
+    });
+    if (r.ok) {
+      const j = await r.json();
+      address = j.display_name?.split(',').slice(0,3).join(', ') || address;
+    }
+  } catch(e) {}
+  const entry = { lat, lng, address, startTs, endTs, durationMin, date: today };
+  db.collection('locationLog').add({
+    uid: me.uid, groupId, name: myProfile?.name || me.email,
+    ...entry, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(()=>{});
+}
+
 async function loadMetrics() {
   const el = document.getElementById('metList');
   const today = new Date().toISOString().slice(0,10);
   const dateEl = document.getElementById('metDate');
   if (dateEl) dateEl.textContent = today;
+  setText('metTitle','metTitle');
+  setText('logTitleEl','logTitle');
   if (!el || !groupId) return;
   el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2)">⏳</div>';
   try {
     const snap = await db.collection('metrics')
       .where('groupId','==',groupId).where('date','==',today).get();
-    if (snap.empty) {
-      el.innerHTML = `<div class="empty"><div class="ei">📊</div><div class="et">${t('metNoData')}</div></div>`;
-      return;
-    }
     const isAdmin = groupData?.adminUid === me.uid;
     el.innerHTML = '';
-    snap.docs.forEach(d => {
-      const m = d.data();
-      // Non-admin only sees own data
-      if (!isAdmin && m.uid !== me.uid) return;
-      const color = colorForUid(m.uid);
-      const km = (m.distance || 0).toFixed(2);
-      const steps = m.steps || 0;
-      const isMe = m.uid === me.uid;
-      el.innerHTML += `
-        <div class="metric-card">
-          <div class="metric-av" style="background:${color}">${initials(m.name||'?')}</div>
-          <div style="flex:1">
-            <div class="metric-name">${esc(m.name||'?')} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''}</div>
-            <div class="metric-row">
-              <div class="metric-val">🏃 <b>${km}</b> ${t('metKm')}</div>
-              ${steps>0?`<div class="metric-val">👟 <b>${steps.toLocaleString()}</b> ${t('metSteps')}</div>`:''}
+    if (snap.empty) {
+      el.innerHTML = `<div class="empty"><div class="ei">📊</div><div class="et">${t('metNoData')}</div></div>`;
+    } else {
+      snap.docs.forEach(d => {
+        const m = d.data();
+        if (!isAdmin && m.uid !== me.uid) return;
+        const color = colorForUid(m.uid);
+        const km = (m.distance || 0).toFixed(2);
+        const steps = m.steps || 0;
+        const isMe = m.uid === me.uid;
+        const canRoute = isAdmin || isMe;
+        el.innerHTML += `
+          <div class="metric-card">
+            <div class="metric-av" style="background:${color}">${initials(m.name||'?')}</div>
+            <div style="flex:1">
+              <div class="metric-name">${esc(m.name||'?')} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''}</div>
+              <div class="metric-row">
+                <div class="metric-val">🏃 <b>${km}</b> ${t('metKm')}</div>
+                ${steps>0?`<div class="metric-val">👟 <b>${steps.toLocaleString()}</b> ${t('metSteps')}</div>`:''}
+              </div>
+              ${canRoute ? `<div class="metric-btns">
+                <button class="small-btn" onclick="showDailyRoute('${m.uid}','${esc(m.name||'')}','${colorForUid(m.uid)}')">🗺️ ${t('showRoute')}</button>
+              </div>` : ''}
             </div>
+          </div>`;
+      });
+      if (!el.innerHTML) {
+        el.innerHTML = `<div class="empty"><div class="ei">📊</div><div class="et">${t('metNoData')}</div></div>`;
+      }
+    }
+  } catch(e) { el.innerHTML = '<div style="padding:20px;color:var(--red)">'+e.message+'</div>'; }
+  // Load location log
+  await loadLocationLog();
+}
+
+async function loadLocationLog() {
+  const el = document.getElementById('logList');
+  if (!el || !groupId) return;
+  el.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text2)">⏳</div>';
+  const today = new Date().toISOString().slice(0,10);
+  const isAdmin = groupData?.adminUid === me.uid;
+  try {
+    let q = db.collection('locationLog').where('groupId','==',groupId).where('date','==',today);
+    if (!isAdmin) q = q.where('uid','==',me.uid);
+    const snap = await q.orderBy('startTs','desc').limit(30).get();
+    if (snap.empty) {
+      el.innerHTML = `<div class="empty"><div class="ei">📌</div><div class="et">${t('logNoData')}</div></div>`;
+      return;
+    }
+    el.innerHTML = '';
+    snap.docs.forEach(d => {
+      const log = d.data();
+      const startTime = new Date(log.startTs).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      const endTime   = new Date(log.endTs).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      const who = isAdmin && log.uid !== me.uid ? `<span style="font-size:11px;color:var(--text2)"> · ${esc(log.name)}</span>` : '';
+      el.innerHTML += `
+        <div class="log-entry" onclick="flyToPoint(${log.lat},${log.lng})">
+          <div class="log-dot"></div>
+          <div>
+            <div class="log-addr">${esc(log.address)}${who}</div>
+            <div class="log-time">${startTime} – ${endTime} · ${log.durationMin} ${t('logMins')}</div>
           </div>
         </div>`;
     });
-    if (!el.innerHTML) {
-      el.innerHTML = `<div class="empty"><div class="ei">📊</div><div class="et">${t('metNoData')}</div></div>`;
+  } catch(e) {
+    el.innerHTML = `<div style="padding:12px;color:var(--text2)">${e.message}</div>`;
+  }
+}
+
+// ── Daily Route ──
+let routeLayer = null;
+
+async function showDailyRoute(uid, name, color) {
+  // Clear previous route
+  if (routeLayer) { mapObj.removeLayer(routeLayer); routeLayer = null; }
+  const today = new Date().toISOString().slice(0,10);
+  const docId = `${groupId}_${uid}_${today}`;
+  try {
+    const doc = await db.collection('tracks').doc(docId).get();
+    if (!doc.exists || !doc.data().points?.length) {
+      showToast(t('routeNoData'), 'err'); return;
     }
-  } catch(e) { el.innerHTML = '<div style="padding:20px;color:var(--red)">'+e.message+'</div>'; }
+    const pts = doc.data().points.sort((a,b) => a.ts - b.ts);
+    if (pts.length < 2) { showToast(t('routeNoData'), 'err'); return; }
+    routeLayer = L.layerGroup().addTo(mapObj);
+    // Color per motion type
+    const motionColors = { still:'#546e7a', walking:'#34a853', cycling:'#fbbc04', driving:'#ea4335' };
+    // Draw polyline segments colored by motion
+    for (let i = 1; i < pts.length; i++) {
+      const c = motionColors[pts[i].motion] || '#1a73e8';
+      L.polyline([[pts[i-1].lat, pts[i-1].lng],[pts[i].lat, pts[i].lng]],
+        {color:c, weight:4, opacity:.8}).addTo(routeLayer);
+    }
+    // Find stop points (stayed >2min at same location)
+    let stopN = 0;
+    const stops = [];
+    let runStart = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const d = haversine(pts[runStart].lat, pts[runStart].lng, pts[i].lat, pts[i].lng);
+      const dt = pts[i].ts - pts[runStart].ts;
+      if (d > 80 || i === pts.length-1) {
+        if (dt > 120000) { // stayed > 2min
+          stops.push({...pts[runStart], n: ++stopN, motion: pts[runStart].motion,
+            duration: Math.round(dt/60000)});
+        }
+        runStart = i;
+      }
+    }
+    // Draw numbered stop markers
+    stops.forEach(s => {
+      const mico = MOTION_EMOJI[s.motion] || '';
+      const icon = L.divIcon({
+        className:'', iconSize:[24,24], iconAnchor:[12,12],
+        html:`<div class="route-stop-marker">${s.n}</div>`
+      });
+      const ts = new Date(s.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      L.marker([s.lat,s.lng],{icon}).addTo(routeLayer)
+        .bindPopup(`<b>${t('routeStop')} ${s.n}</b>${mico}<br>${ts} · ${s.duration} ${t('logMins')}`);
+    });
+    // Start/end markers
+    L.circleMarker([pts[0].lat,pts[0].lng],{radius:8,color:'#34a853',fillColor:'#34a853',fillOpacity:1,weight:2})
+      .addTo(routeLayer).bindPopup('🟢 ' + new Date(pts[0].ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+    L.circleMarker([pts[pts.length-1].lat,pts[pts.length-1].lng],{radius:8,color:'#ea4335',fillColor:'#ea4335',fillOpacity:1,weight:2})
+      .addTo(routeLayer).bindPopup('🔴 ' + new Date(pts[pts.length-1].ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+    // Fit map to route
+    const latlngs = pts.map(p => [p.lat, p.lng]);
+    mapObj.fitBounds(L.latLngBounds(latlngs).pad(0.15));
+    switchTab('map');
+    showToast(`🗺️ ${name} · ${stops.length} ${t('routeStop').toLowerCase()}`, 'ok', 6000);
+  } catch(e) { showToast(e.message, 'err'); }
 }
 
 // ══════════════════════════════════════════════
