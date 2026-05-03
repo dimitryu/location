@@ -19,7 +19,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.2.0";
+const APP_VERSION        = "1.3.0";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -162,18 +162,33 @@ button{font-family:inherit;cursor:pointer}
   box-shadow:var(--shadow);display:flex;align-items:center;gap:6px;color:var(--text);
 }
 .m-priv.hid{background:var(--red);color:#fff}
-/* Map FAB buttons - bottom right */
-.map-fabs{position:absolute;bottom:80px;right:14px;z-index:1000;display:flex;flex-direction:column;gap:10px}
+/* ── INSTALL BANNER (vaad style) ── */
+#installBanner{
+  position:fixed;bottom:calc(var(--nav) + 12px);left:12px;right:12px;
+  background:linear-gradient(135deg,#1565c0,#1976d2);color:#fff;
+  border-radius:16px;padding:12px 16px;display:none;
+  align-items:center;gap:10px;z-index:3001;
+  box-shadow:0 4px 20px rgba(25,118,210,.4);
+  animation:slideUp .4s ease;
+}
+.ib-ico{font-size:28px;flex-shrink:0}
+.ib-txt{flex:1}
+.ib-txt strong{font-size:14px;display:block;font-weight:800}
+.ib-txt span{font-size:12px;opacity:.85}
+.ib-yes{padding:8px 16px;background:#fff;color:#1565c0;border:none;border-radius:10px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}
+.ib-no{padding:8px 10px;background:rgba(255,255,255,.2);border:none;border-radius:10px;color:#fff;font-size:13px;cursor:pointer}
+/* Map FAB buttons — stacked at bottom-right above zoom */
+.map-fabs{position:absolute;bottom:160px;right:14px;z-index:1000;display:flex;flex-direction:column;gap:8px}
 .map-fab-btn{
   width:46px;height:46px;border-radius:50%;border:none;cursor:pointer;
   display:flex;align-items:center;justify-content:center;font-size:20px;
   box-shadow:0 3px 12px rgba(0,0,0,.25);font-family:inherit;
 }
 .map-fab-center{background:var(--primary);color:#fff}
-.map-fab-add{background:var(--green);color:#fff;font-size:26px}
-/* Move Leaflet zoom to avoid overlap with member selector */
+.map-fab-add{background:var(--green);color:#fff;font-size:26px;font-weight:900}
+/* Leaflet zoom bottom-right */
 .leaflet-top.leaflet-left{display:none}
-.leaflet-bottom.leaflet-right .leaflet-control-zoom{margin-bottom:140px;margin-right:8px}
+.leaflet-bottom.leaflet-right .leaflet-control-zoom{margin-bottom:100px;margin-right:14px}
 .add-hint{
   position:absolute;bottom:80px;left:50%;transform:translateX(-50%);z-index:1000;
   background:rgba(0,0,0,.75);color:#fff;padding:10px 20px;border-radius:20px;
@@ -517,6 +532,19 @@ select.lang-sel{
   <button class="btn btn-s mt16" onclick="doLogout()" style="max-width:200px;margin-top:12px" id="bObLogout"></button>
 </div>
 
+<!-- Install Banner (shows automatically when Chrome is ready) -->
+<div id="installBanner">
+  <div class="ib-ico">📲</div>
+  <div class="ib-txt">
+    <strong id="ibTitle">התקן את Family Location</strong>
+    <span id="ibSub">עבוד ללא דפדפן, כמו אפליקציה אמיתית</span>
+  </div>
+  <div style="display:flex;gap:6px;flex-shrink:0">
+    <button class="ib-yes" onclick="doInstall()" id="ibYes">התקן</button>
+    <button class="ib-no" onclick="dismissInstall()">✕</button>
+  </div>
+</div>
+
 <!-- ══════════ APP ══════════ -->
 <div id="vApp" hidden>
   <!-- Header -->
@@ -554,8 +582,6 @@ select.lang-sel{
         <span id="addHintTxt"></span>
         <button onclick="cancelAddPoint()">✕</button>
       </div>
-      <!-- Members overlay right side -->
-      <div id="memsOverlay" class="no-print" style="position:absolute;top:64px;right:12px;z-index:999;display:flex;flex-direction:column;gap:6px;max-width:150px"></div>
     </div>
 
     <!-- POINTS -->
@@ -677,7 +703,7 @@ select.lang-sel{
         </div>
 
         <div style="text-align:center;padding:16px 0;color:var(--text2);font-size:12px">
-          Family Location v<span id="verFoot">1.1.0</span> · dimitryu
+          Family Location v<span id="verFoot">1.3.0</span> · dimitryu
         </div>
       </div>
     </div>
@@ -693,7 +719,7 @@ select.lang-sel{
       <span class="ni">📍</span><span class="nl" id="nlPoints"></span>
     </button>
     <button class="nb" id="nb-group" onclick="switchTab('group')">
-      <span class="ni">👥</span><span class="nl" id="nlGroup"></span>
+      <span class="ni">👥</span><span class="nl" id="nlGroup" style="max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
     </button>
     <button class="nb" id="nb-metrics" onclick="switchTab('metrics')">
       <span class="ni">📊</span><span class="nl" id="nlMetrics"></span>
@@ -811,6 +837,7 @@ const TR = {
     noGps:'GPS לא זמין',
     metTitle:'מדדים יומיים',metToday:'היום',metKm:'ק"מ',metSteps:'צעדים',metNoData:'אין נתונים להיום',
     allMembers:'כל חברי הקבוצה',selectMember:'בחר חבר',
+    switchGroup:'החלף קבוצה',
     motionWalk:'הולך',motionCycle:'אופניים',motionDrive:'נוסע',motionStill:'עומד',
     logTitle:'לוג מיקומים',logStayed:'שהה',logMins:'דק׳',logNoData:'אין נתוני מיקום',
     routeTitle:'מסלול יומי',showRoute:'הצג מסלול',hideRoute:'הסתר מסלול',
@@ -855,6 +882,7 @@ const TR = {
     noGps:'GPS unavailable',
     metTitle:'Daily Stats',metToday:'Today',metKm:'km',metSteps:'steps',metNoData:'No data for today',
     allMembers:'All members',selectMember:'Select member',
+    switchGroup:'Switch Group',
     motionWalk:'Walking',motionCycle:'Cycling',motionDrive:'Driving',motionStill:'Still',
     logTitle:'Location Log',logStayed:'stayed',logMins:'min',logNoData:'No location data',
     routeTitle:'Daily Route',showRoute:'Show route',hideRoute:'Hide route',
@@ -899,6 +927,7 @@ const TR = {
     noGps:'GPS недоступен',
     metTitle:'Статистика за день',metToday:'Сегодня',metKm:'км',metSteps:'шагов',metNoData:'Нет данных за сегодня',
     allMembers:'Все участники',selectMember:'Выбрать участника',
+    switchGroup:'Сменить группу',
     motionWalk:'Ходит',motionCycle:'Велосипед',motionDrive:'Едет',motionStill:'Стоит',
     logTitle:'Журнал мест',logStayed:'пробыл',logMins:'мин',logNoData:'Нет данных о местах',
     routeTitle:'Дневной маршрут',showRoute:'Показать маршрут',hideRoute:'Скрыть маршрут',
@@ -1072,7 +1101,11 @@ async function doCreateGroup() {
       createdAt: new Date()
     });
     await db.collection('joinCodes').doc(code).set({ groupId, createdAt: new Date() });
-    await db.collection('users').doc(me.uid).update({ groupId });
+    // Store in groups array (multi-group support)
+    await db.collection('users').doc(me.uid).set({
+      groupId,
+      groups: firebase.firestore.FieldValue.arrayUnion(groupId)
+    }, {merge: true});
     confetti();
     showToast(t('okCreate'),'ok');
     await initApp();
@@ -1083,7 +1116,6 @@ async function doJoinGroup() {
   const code = document.getElementById('iJoinCode').value.trim().toUpperCase();
   if (code.length < 4) return;
   try {
-    // Query groups directly by joinCode field — avoids joinCodes collection permissions
     const q = await db.collection('groups').where('joinCode','==',code).limit(1).get();
     if (q.empty) { showToast(t('errJoin'),'err'); return; }
     const grpDoc = q.docs[0];
@@ -1091,7 +1123,10 @@ async function doJoinGroup() {
     await db.collection('groups').doc(groupId).update({
       members: firebase.firestore.FieldValue.arrayUnion(me.uid)
     });
-    await db.collection('users').doc(me.uid).update({ groupId });
+    await db.collection('users').doc(me.uid).set({
+      groupId,
+      groups: firebase.firestore.FieldValue.arrayUnion(groupId)
+    }, {merge: true});
     confetti();
     showToast(t('okJoin'),'ok');
     await initApp();
@@ -1144,6 +1179,9 @@ async function loadGroup() {
   if (unsubGrp) unsubGrp();
   unsubGrp = db.collection('groups').doc(groupId).onSnapshot(s => {
     groupData = s.data();
+    // Update group name in nav button
+    const gnlEl = document.getElementById('nlGroup');
+    if (gnlEl) gnlEl.textContent = groupData?.name || t('navGrp');
     renderGroupTab();
   });
 }
@@ -1151,6 +1189,10 @@ async function loadGroup() {
 function renderGroupTab() {
   if (!groupData) return;
   const isAdmin = groupData.adminUid === me.uid;
+  // Check how many groups user belongs to (for switcher)
+  const myGroups = myProfile?.groups || [groupId];
+  const multiGroup = myGroups.length > 1;
+
   document.getElementById('grpInfoCard').innerHTML = `
     <div class="card">
       <div class="ci" style="cursor:default">
@@ -1159,7 +1201,10 @@ function renderGroupTab() {
           <div class="cit">${esc(groupData.name)}</div>
           <div class="cis">${groupData.members?.length||1} ${t('memsTitle').toLowerCase()} · ${isAdmin?'<span class="badge bdg-a">'+t('admin')+'</span>':''}</div>
         </div>
-        <button class="small-btn" onclick="showGroupCode()">#${esc(groupData.joinCode||'')}</button>
+        <div style="display:flex;gap:6px">
+          ${multiGroup ? `<button class="small-btn" onclick="showGroupSwitcher()">🔄</button>` : ''}
+          <button class="small-btn" onclick="showGroupCode()">#${esc(groupData.joinCode||'')}</button>
+        </div>
       </div>
     </div>`;
 
@@ -1239,7 +1284,7 @@ function initMap() {
   mapObj = L.map(el, { zoomControl: false, attributionControl: false })
     .setView([31.7683, 35.2137], 10);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, attribution: '© OpenStreetMap'
+    maxZoom: 20, maxNativeZoom: 19, attribution: '© OpenStreetMap'
   }).addTo(mapObj);
   L.control.attribution({ prefix: false }).addTo(mapObj);
   // Zoom control at bottom-right (above FABs)
@@ -1359,13 +1404,17 @@ async function saveEditPoint(id) {
 
 function syncPointMarkers() {
   if (!mapObj) return;
-  // Remove old
-  Object.entries(pointMarkers).forEach(([id, m]) => {
-    if (!points.find(p => p.id === id)) { mapObj.removeLayer(m); delete pointMarkers[id]; }
+  // Remove markers for deleted points
+  Object.entries(pointMarkersMap).forEach(([id, {marker, circle}]) => {
+    if (!points.find(p => p.id === id)) {
+      if (marker) mapObj.removeLayer(marker);
+      if (circle) mapObj.removeLayer(circle);
+      delete pointMarkersMap[id];
+    }
   });
-  // Add new
+  // Add markers for new points
   points.forEach(p => {
-    if (!pointMarkers[p.id]) {
+    if (!pointMarkersMap[p.id]) {
       const icon = L.divIcon({
         className: '', iconSize: [28,28], iconAnchor: [14,28],
         html: `<div class="pm"><div class="pm-inner">📍</div></div>`
@@ -1373,10 +1422,10 @@ function syncPointMarkers() {
       const marker = L.marker([p.lat, p.lng], {icon})
         .addTo(mapObj)
         .bindPopup(`<b>${esc(p.name)}</b><br>${t('radiusM')}${p.radius}${t('meters')}`);
-      // Radius circle
-      L.circle([p.lat, p.lng], {radius:p.radius, color:'#ea4335', fillColor:'#ea4335', fillOpacity:0.1, weight:1.5})
-        .addTo(mapObj);
-      pointMarkers[p.id] = marker;
+      const circle = L.circle([p.lat, p.lng], {
+        radius:p.radius, color:'#ea4335', fillColor:'#ea4335', fillOpacity:0.08, weight:1.5
+      }).addTo(mapObj);
+      pointMarkersMap[p.id] = {marker, circle};
     }
   });
 }
@@ -1517,7 +1566,7 @@ function updateMemberMarker(uid, data) {
     const cluster = [...allVisible.map(([id]) => id), uid].sort();
     const idx = cluster.indexOf(uid);
     const total = cluster.length;
-    const SPREAD = 0.00025; // ~28m spread radius
+    const SPREAD = 0.000075; // ~8m spread radius
     const angle = (idx / total) * 2 * Math.PI - Math.PI / 2;
     lat = data.lat + SPREAD * Math.cos(angle);
     lng = data.lng + SPREAD * Math.sin(angle);
@@ -1638,8 +1687,46 @@ async function leaveGroup() {
   } catch(e) { showToast(e.message,'err'); }
 }
 
-// ══════════════════════════════════════════════
-//  SETTINGS
+async function showGroupSwitcher() {
+  const myGroups = myProfile?.groups || [groupId];
+  if (myGroups.length <= 1) return;
+  // Load group names
+  const grpSnaps = await Promise.all(myGroups.map(gid => db.collection('groups').doc(gid).get()));
+  const items = grpSnaps.map(s => ({id:s.id, name:s.data()?.name||s.id.slice(0,8)}));
+  openModal(`
+    <div class="mttl">🔄 ${t('switchGroup')}</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin:12px 0">
+      ${items.map(g => `
+        <div class="ci" style="cursor:pointer;background:${g.id===groupId?'var(--primary)':''};color:${g.id===groupId?'#fff':''};border-radius:10px;" onclick="switchGroup('${g.id}')">
+          <span style="font-size:20px">👨‍👩‍👧‍👦</span>
+          <div style="flex:1;font-weight:700">${esc(g.name)}</div>
+          ${g.id===groupId?'<span>✓</span>':''}
+        </div>`).join('')}
+    </div>
+    <button class="btn btn-s" onclick="closeModal()">${t('cancel')}</button>
+  `);
+}
+
+async function switchGroup(newGid) {
+  if (newGid === groupId) { closeModal(); return; }
+  closeModal();
+  // Unsubscribe current
+  unsubAll();
+  stopTracking();
+  // Clear map
+  Object.values(memberMarkers).forEach(m => mapObj?.removeLayer(m));
+  memberMarkers = {};
+  Object.values(pointMarkersMap).forEach(({marker,circle}) => {
+    if(marker) mapObj?.removeLayer(marker);
+    if(circle) mapObj?.removeLayer(circle);
+  });
+  pointMarkersMap = {};
+  points = []; members = {};
+  // Switch
+  groupId = newGid;
+  await db.collection('users').doc(me.uid).update({ groupId: newGid });
+  await initApp();
+}
 // ══════════════════════════════════════════════
 function editProfile() {
   openModal(`
@@ -1698,7 +1785,9 @@ function switchTab(name) {
     document.getElementById('tp-'+n).className = 'tp' + (n===name?' on':'');
     document.getElementById('nb-'+n).className = 'nb' + (n===name?' on':'');
   });
-  if (name === 'map' && mapObj) setTimeout(() => mapObj.invalidateSize(), 100);
+  if (name === 'map' && mapObj) {
+    setTimeout(() => { mapObj.invalidateSize(); syncPointMarkers(); }, 100);
+  }
   if (name === 'group') renderGroupTab();
   if (name === 'metrics') loadMetrics();
   if (name === 'settings') renderSettings();
@@ -1761,7 +1850,10 @@ function renderUI() {
   const backs = ['bBackOB','bBackOB2','bObLogout'];
   backs.forEach((id,i) => { const el = document.getElementById(id); if(el) el.textContent = i<2?t('btnBack'):t('btnLogout'); });
   // Nav labels
-  setText('nlMap','navMap'); setText('nlPoints','navPts'); setText('nlGroup','navGrp');
+  setText('nlMap','navMap'); setText('nlPoints','navPts');
+  // Group nav label = group name if loaded, else i18n
+  const gnlEl = document.getElementById('nlGroup');
+  if (gnlEl) gnlEl.textContent = groupData?.name || t('navGrp');
   setText('nlMetrics','navMet'); setText('nlSettings','navSet');
   // Points tab
   setText('ptTitle','ptTitle');
@@ -1859,23 +1951,39 @@ function relativeTime(date) {
 }
 
 // ══════════════════════════════════════════════
-//  PWA INSTALL
+//  PWA INSTALL (vaad.html style — auto banner)
 // ══════════════════════════════════════════════
 let deferredInstallPrompt = null;
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent.toLowerCase());
 const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches
   || window.navigator.standalone === true;
 
-window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
-  deferredInstallPrompt = e;
+function initInstallPrompt() {
+  if (isInStandaloneMode) { updateInstallUI(); return; }
+  if (isIOS) {
+    if (!localStorage.getItem('fl_dismissed')) setTimeout(showIOSInstall, 4000);
+    updateInstallUI(); return;
+  }
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    updateInstallUI();
+    if (!localStorage.getItem('fl_dismissed')) {
+      setTimeout(() => {
+        const b = document.getElementById('installBanner');
+        if (b) b.style.display = 'flex';
+      }, 2500);
+    }
+  });
+  window.addEventListener('appinstalled', () => {
+    const b = document.getElementById('installBanner');
+    if (b) b.style.display = 'none';
+    deferredInstallPrompt = null;
+    updateInstallUI();
+    showToast('✅ ' + t('sInstalled'), 'ok');
+  });
   updateInstallUI();
-});
-window.addEventListener('appinstalled', () => {
-  deferredInstallPrompt = null;
-  updateInstallUI();
-  showToast('✅ ' + t('sInstalled'), 'ok');
-});
+}
 
 function updateInstallUI() {
   const elPrompt = document.getElementById('siInstall');
@@ -1883,36 +1991,36 @@ function updateInstallUI() {
   const elDone   = document.getElementById('siInstalled');
   const elWait   = document.getElementById('siInstallWait');
   if (!elPrompt) return;
-
-  setText('sInstLbl','sInst');
-  setText('sInstall','sInstall');
-  setText('sInstallIOS','sInstallIOS');
-  setText('sInstalled','sInstalled');
+  setText('sInstLbl','sInst'); setText('sInstall','sInstall');
+  setText('sInstallIOS','sInstallIOS'); setText('sInstalled','sInstalled');
   setText('sInstallWait','sInstallWait');
-
   const hide = el => { if(el) el.style.display='none'; };
   const show = el => { if(el) el.style.display='flex'; };
   hide(elPrompt); hide(elIOS); hide(elDone); hide(elWait);
-
-  if (isInStandaloneMode) {
-    show(elDone);
-  } else if (deferredInstallPrompt) {
-    show(elPrompt);
-  } else if (isIOS) {
-    show(elIOS);
-  } else {
-    // Android/Chrome - prompt not ready yet (browser hasn't decided)
-    show(elWait);
-  }
+  if (isInStandaloneMode) show(elDone);
+  else if (deferredInstallPrompt) show(elPrompt);
+  else if (isIOS) show(elIOS);
+  else show(elWait);
 }
 
-async function doInstallPWA() {
+async function doInstall() {
   if (!deferredInstallPrompt) return;
   try {
     deferredInstallPrompt.prompt();
     const { outcome } = await deferredInstallPrompt.userChoice;
-    if (outcome === 'accepted') { deferredInstallPrompt = null; updateInstallUI(); }
-  } catch(e) { console.error('Install error:', e); }
+    if (outcome === 'accepted') {
+      deferredInstallPrompt = null;
+      const b = document.getElementById('installBanner');
+      if (b) b.style.display = 'none';
+      updateInstallUI();
+    }
+  } catch(e) {}
+}
+function doInstallPWA() { doInstall(); }
+function dismissInstall() {
+  const b = document.getElementById('installBanner');
+  if (b) b.style.display = 'none';
+  localStorage.setItem('fl_dismissed', '1');
 }
 
 function showIOSInstall() {
@@ -1921,10 +2029,7 @@ function showIOSInstall() {
     <div style="display:flex;flex-direction:column;gap:12px;margin:16px 0">
       <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
         <span style="font-size:26px">1️⃣</span>
-        <div>
-          <div style="font-weight:700;font-size:14px">${t('iosInstStep1')}</div>
-          <div style="font-size:24px;margin-top:4px">⎙</div>
-        </div>
+        <div><div style="font-weight:700;font-size:14px">${t('iosInstStep1')}</div><div style="font-size:24px;margin-top:4px">⎙</div></div>
       </div>
       <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
         <span style="font-size:26px">2️⃣</span>
@@ -1935,7 +2040,7 @@ function showIOSInstall() {
         <div style="font-weight:700;font-size:14px">${t('iosInstStep3')}</div>
       </div>
     </div>
-    <button class="btn btn-p" onclick="closeModal()">${t('cancel')}</button>
+    <button class="btn btn-p" onclick="closeModal();localStorage.setItem('fl_dismissed','1')">${t('cancel')}</button>
   `);
 }
 
@@ -2074,34 +2179,89 @@ async function loadMetrics() {
 async function loadLocationLog() {
   const el = document.getElementById('logList');
   if (!el || !groupId) return;
+  const logTitleEl = document.getElementById('logTitleEl');
+  if (logTitleEl) logTitleEl.textContent = t('logTitle');
   el.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text2)">⏳</div>';
   const today = new Date().toISOString().slice(0,10);
   const isAdmin = groupData?.adminUid === me.uid;
+
   try {
-    let q = db.collection('locationLog').where('groupId','==',groupId).where('date','==',today);
-    if (!isAdmin) q = q.where('uid','==',me.uid);
-    const snap = await q.orderBy('startTs','desc').limit(30).get();
-    if (snap.empty) {
-      el.innerHTML = `<div class="empty"><div class="ei">📌</div><div class="et">${t('logNoData')}</div></div>`;
-      return;
-    }
+    // Load track points for today
+    const docId = `${groupId}_${me.uid}_${today}`;
+    // Admin: load all members' tracks
+    const uidsToLoad = isAdmin
+      ? (groupData?.members || [me.uid])
+      : [me.uid];
+
+    const trackDocs = await Promise.all(
+      uidsToLoad.map(uid => db.collection('tracks').doc(`${groupId}_${uid}_${today}`).get())
+    );
+
     el.innerHTML = '';
-    snap.docs.forEach(d => {
-      const log = d.data();
-      const startTime = new Date(log.startTs).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-      const endTime   = new Date(log.endTs).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-      const who = isAdmin && log.uid !== me.uid ? `<span style="font-size:11px;color:var(--text2)"> · ${esc(log.name)}</span>` : '';
+    let hasData = false;
+
+    trackDocs.forEach((doc, i) => {
+      const uid = uidsToLoad[i];
+      if (!doc.exists || !doc.data().points?.length) return;
+      const rawPts = doc.data().points.sort((a,b) => a.ts - b.ts);
+      if (rawPts.length < 2) return;
+      hasData = true;
+      const name = doc.data().name || uid.slice(0,6);
+      const color = colorForUid(uid);
+      const isMe = uid === me.uid;
+
+      // Build movement rows — group consecutive points by motion type + location
+      const rows = [];
+      let seg = { motion: rawPts[0].motion, startTs: rawPts[0].ts, lat: rawPts[0].lat, lng: rawPts[0].lng };
+      for (let j = 1; j < rawPts.length; j++) {
+        const p = rawPts[j];
+        const moved = haversine(seg.lat, seg.lng, p.lat, p.lng);
+        const motionChanged = p.motion !== seg.motion;
+        if (motionChanged || moved > 100) {
+          rows.push({...seg, endTs: rawPts[j-1].ts, endLat: rawPts[j-1].lat, endLng: rawPts[j-1].lng});
+          seg = {motion: p.motion, startTs: p.ts, lat: p.lat, lng: p.lng};
+        }
+      }
+      rows.push({...seg, endTs: rawPts[rawPts.length-1].ts, endLat: rawPts[rawPts.length-1].lat, endLng: rawPts[rawPts.length-1].lng});
+
+      const motionLabel = m => ({ still:'🔵 עמד', walking:'🚶 הלך', cycling:'🚴 רכב אופניים', driving:'🚗 נסע' }[m] || m);
+      const fmt = ts => new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+
       el.innerHTML += `
-        <div class="log-entry" onclick="flyToPoint(${log.lat},${log.lng})">
-          <div class="log-dot"></div>
-          <div>
-            <div class="log-addr">${esc(log.address)}${who}</div>
-            <div class="log-time">${startTime} – ${endTime} · ${log.durationMin} ${t('logMins')}</div>
+        <div style="margin-bottom:14px">
+          ${isAdmin && !isMe ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <div style="width:32px;height:32px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff">${initials(name)}</div>
+            <span style="font-weight:700;font-size:14px">${esc(name)}</span>
+          </div>` : ''}
+          <div style="background:var(--card);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)">
+            <table style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead><tr style="background:var(--bg3)">
+                <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--text2)">זמן</th>
+                <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--text2)">פעילות</th>
+                <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--text2)">משך</th>
+              </tr></thead>
+              <tbody>
+                ${rows.map((r,ri) => {
+                  const dur = Math.round((r.endTs - r.startTs)/60000);
+                  const durStr = dur < 60 ? `${dur} ד'` : `${Math.round(dur/60)}ש' ${dur%60}ד'`;
+                  const ml = motionLabel(r.motion||'still');
+                  return `<tr style="border-top:1px solid var(--border);cursor:pointer" onclick="flyToPoint(${r.lat},${r.lng})">
+                    <td style="padding:9px 12px;font-weight:600">${fmt(r.startTs)}–${fmt(r.endTs)}</td>
+                    <td style="padding:9px 12px">${ml}</td>
+                    <td style="padding:9px 12px;color:var(--text2)">${durStr}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
           </div>
         </div>`;
     });
+
+    if (!hasData) {
+      el.innerHTML = `<div class="empty"><div class="ei">📌</div><div class="et">${t('logNoData')}</div></div>`;
+    }
   } catch(e) {
-    el.innerHTML = `<div style="padding:12px;color:var(--text2)">${e.message}</div>`;
+    el.innerHTML = `<div style="padding:12px;color:var(--red)">${e.message}<br><small>${t('logIndexHint')||'נדרש index ב-Firestore'}</small></div>`;
   }
 }
 
@@ -2218,30 +2378,7 @@ document.addEventListener('click', e => {
 //  UPDATE MEMBERS OVERLAY (move to right)
 // ══════════════════════════════════════════════
 function updateMembersOverlay() {
-  const el = document.getElementById('memsOverlay');
-  if (!el) return;
-  const perms = groupData?.permissions || {};
-  const arr = Object.entries(members).filter(([uid]) => uid !== me.uid).filter(([uid, d]) => {
-    if (d.hidden) return false;
-    const whoCanSee = perms[uid];
-    return !whoCanSee || whoCanSee.length === 0 || whoCanSee.includes(me.uid);
-  });
-  if (!arr.length) { el.innerHTML = ''; return; }
-  el.innerHTML = arr.map(([uid, d]) => {
-    const color = colorForUid(uid);
-    const name = d.name || uid.slice(0,6);
-    const ts = d.ts?.toDate ? d.ts.toDate() : null;
-    const ago = ts ? relativeTime(ts) : '';
-    const online = ts && (Date.now() - ts.getTime()) < 90000;
-    const motion = d.motion ? (MOTION_EMOJI[d.motion]||'') : '';
-    return `<div class="mem-chip" onclick="flyToMember('${uid}')">
-      <div class="mem-dot" style="background:${online?'#34a853':color}"></div>
-      <div>
-        <div class="mem-name">${esc(name)} ${motion}</div>
-        ${ago?`<div class="mem-time">${ago}</div>`:''}
-      </div>
-    </div>`;
-  }).join('');
+  // memsOverlay removed from map — no-op
 }
 
 // Also update my own marker with motion badge
@@ -2275,6 +2412,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.documentElement.setAttribute('dir', savedLang==='he'?'rtl':'ltr');
   renderUI();
   initFirebase();
+  initInstallPrompt();
   // Register service worker
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(()=>{});
