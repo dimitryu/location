@@ -19,7 +19,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.0.4";
+const APP_VERSION        = "1.0.5";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -375,7 +375,7 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v1.0.4</div>
+  <div class="lver" id="lVer">v1.0.5</div>
   <div class="lsp"></div>
 </div>
 
@@ -384,7 +384,7 @@ select.lang-sel{
   <div class="al">📍</div>
   <div class="at">Family Location</div>
   <div class="as" id="aSubT">מעקב מיקום משפחתי חכם</div>
-  <div style="font-size:11px;color:var(--text2);font-weight:800;margin-bottom:12px">v<span id="verAuth">1.0.4</span></div>
+  <div style="font-size:11px;color:var(--text2);font-weight:800;margin-bottom:12px">v<span id="verAuth">1.0.5</span></div>
   <div class="acard">
     <div class="atabs">
       <div class="atab on" id="tabLogin" onclick="switchAuthTab('login')" id="tabLoginBtn"></div>
@@ -425,7 +425,7 @@ select.lang-sel{
   <div class="ol">👨‍👩‍👧‍👦</div>
   <div class="ot" id="obTitle"></div>
   <div class="os" id="obSub"></div>
-  <div style="font-size:11px;color:var(--text2);font-weight:800;margin-bottom:12px">v<span id="verOnboard">1.0.4</span></div>
+  <div style="font-size:11px;color:var(--text2);font-weight:800;margin-bottom:16px">v<span id="verOnboard">1.0.5</span></div>
   <div class="oo" onclick="showCreateGroup()">
     <div class="oo-ico">➕</div>
     <div><div class="oo-h" id="obCreate"></div><div class="oo-s" id="obCreateS"></div></div>
@@ -547,6 +547,24 @@ select.lang-sel{
         </div>
 
         <div class="sg">
+          <div class="sl" id="sInstLbl"></div>
+          <div class="si" id="siInstall" onclick="doInstallPWA()" style="display:none">
+            <span class="si-ico">📲</span>
+            <span class="si-txt" id="sInstall"></span>
+            <span class="si-val" id="sInstallVal"></span>
+          </div>
+          <div class="si" id="siInstallIOS" onclick="showIOSInstall()" style="display:none">
+            <span class="si-ico">📲</span>
+            <span class="si-txt" id="sInstallIOS"></span>
+            <span class="si-val">iOS</span>
+          </div>
+          <div class="si" id="siInstalled" style="display:none;cursor:default">
+            <span class="si-ico">✅</span>
+            <span class="si-txt" id="sInstalled"></span>
+          </div>
+        </div>
+
+        <div class="sg">
           <div class="sl" id="sGrpLbl"></div>
           <div class="si" onclick="showGroupCode()">
             <span class="si-ico">🔗</span>
@@ -566,7 +584,7 @@ select.lang-sel{
         </div>
 
         <div style="text-align:center;padding:16px 0;color:var(--text2);font-size:12px">
-          Family Location v<span id="verFoot">1.0.1</span> · dimitryu
+          Family Location v<span id="verFoot">1.0.5</span> · dimitryu
         </div>
       </div>
     </div>
@@ -686,6 +704,8 @@ const TR = {
     lastSeen:'נראה לאחרונה',now:'עכשיו',minsAgo:'ד׳ לפני',
     radiusM:'רדיוס: ',meters:'מ׳',
     noGps:'GPS לא זמין',
+    sInst:'התקנה',sInstall:'התקן כאפליקציה',sInstallIOS:'הוסף למסך הבית (iOS)',sInstalled:'מותקן על המכשיר',
+    iosInstTitle:'התקנה על iPhone',iosInstStep1:'לחץ על כפתור השיתוף',iosInstStep2:'בחר "הוסף למסך הבית"',iosInstStep3:'לחץ "הוסף" לאישור',
   },
   en:{
     app_name:'Family Location',loading_sub:'Smart family location tracking',
@@ -719,6 +739,8 @@ const TR = {
     lastSeen:'Last seen',now:'just now',minsAgo:'min ago',
     radiusM:'Radius: ',meters:'m',
     noGps:'GPS unavailable',
+    sInst:'INSTALL',sInstall:'Install as App',sInstallIOS:'Add to Home Screen (iOS)',sInstalled:'Installed on device',
+    iosInstTitle:'Install on iPhone',iosInstStep1:'Tap the Share button',iosInstStep2:'Choose "Add to Home Screen"',iosInstStep3:'Tap "Add" to confirm',
   },
   ru:{
     app_name:'Family Location',loading_sub:'Семейный трекер местоположения',
@@ -752,6 +774,8 @@ const TR = {
     lastSeen:'Последний раз',now:'только что',minsAgo:'мин назад',
     radiusM:'Радиус: ',meters:'м',
     noGps:'GPS недоступен',
+    sInst:'УСТАНОВКА',sInstall:'Установить как приложение',sInstallIOS:'Добавить на экран (iOS)',sInstalled:'Установлено на устройстве',
+    iosInstTitle:'Установка на iPhone',iosInstStep1:'Нажмите кнопку «Поделиться»',iosInstStep2:'Выберите «На экран Домой»',iosInstStep3:'Нажмите «Добавить»',
   }
 };
 const t = k => (TR[lang]||TR.en)[k] || (TR.en[k]) || k;
@@ -769,9 +793,7 @@ async function initFirebase() {
 
     // Fallback: if onAuthStateChanged never fires within 8s, show auth
     const splashTimeout = setTimeout(() => {
-      hideSplash();
-      showView('vAuth');
-      renderUI();
+      hideSplash(); showView('vAuth'); renderUI();
     }, 8000);
 
     auth.onAuthStateChanged(user => {
@@ -780,9 +802,7 @@ async function initFirebase() {
     });
   } catch(e) {
     console.error('Firebase init error:', e);
-    hideSplash();
-    showView('vAuth');
-    renderUI();
+    hideSplash(); showView('vAuth'); renderUI();
     showToast('Firebase error: ' + e.message, 'err');
   }
 }
@@ -870,28 +890,13 @@ async function doRegister() {
 async function doGoogle() {
   const provider = new firebase.auth.GoogleAuthProvider();
   try {
-    // Popup works now that dimitryu.github.io is an authorized domain
     await auth.signInWithPopup(provider);
   } catch(e) {
     if (e.code === 'auth/popup-blocked') {
-      // Mobile fallback — no popup allowed
-      showToast('מאשר הפניה...', '');
-      setTimeout(() => auth.signInWithRedirect(provider), 500);
-    } else if (e.code === 'auth/popup-closed-by-user') {
-      // user dismissed, do nothing
-    } else {
+      // Mobile fallback
+      await auth.signInWithRedirect(provider);
+    } else if (e.code !== 'auth/popup-closed-by-user') {
       showToast(t('errLogin') + ': ' + e.message, 'err');
-    }
-  }
-}
-
-// Handle redirect result (for mobile fallback only)
-async function handleRedirectResult() {
-  try {
-    await auth.getRedirectResult();
-  } catch(e) {
-    if (e.code && e.code !== 'auth/no-auth-event') {
-      console.error('Redirect result error:', e);
     }
   }
 }
@@ -947,9 +952,11 @@ async function doJoinGroup() {
   const code = document.getElementById('iJoinCode').value.trim().toUpperCase();
   if (code.length < 4) return;
   try {
-    const snap = await db.collection('joinCodes').doc(code).get();
-    if (!snap.exists) { showToast(t('errJoin'),'err'); return; }
-    groupId = snap.data().groupId;
+    // Query groups directly by joinCode field — avoids joinCodes collection permissions
+    const q = await db.collection('groups').where('joinCode','==',code).limit(1).get();
+    if (q.empty) { showToast(t('errJoin'),'err'); return; }
+    const grpDoc = q.docs[0];
+    groupId = grpDoc.id;
     await db.collection('groups').doc(groupId).update({
       members: firebase.firestore.FieldValue.arrayUnion(me.uid)
     });
@@ -957,7 +964,10 @@ async function doJoinGroup() {
     confetti();
     showToast(t('okJoin'),'ok');
     await initApp();
-  } catch(e) { showToast(e.message,'err'); }
+  } catch(e) {
+    console.error('Join error:', e);
+    showToast(e.message, 'err');
+  }
 }
 
 function genCode(len) {
@@ -1509,6 +1519,7 @@ function renderSettings() {
     const el = document.getElementById(id);
     if (el) el.value = lang;
   });
+  updateInstallUI();
 }
 
 // ══════════════════════════════════════════════
@@ -1564,10 +1575,9 @@ function renderUI() {
   setText('hdrTitle','app_name');
   // Privacy
   document.getElementById('privLbl') && (document.getElementById('privLbl').textContent = isHidden ? t('privOff') : t('privOn'));
-  // Versions — injected into every screen
-  const vids = ['verBadge','verFoot','verAuth','verOnboard'];
-  vids.forEach(id => { const e=document.getElementById(id); if(e) e.textContent=APP_VERSION; });
-  const lv = document.getElementById('lVer'); if(lv) lv.textContent='v'+APP_VERSION;
+  // Versions — all screens
+  ['verBadge','verFoot','verAuth','verOnboard'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=APP_VERSION; });
+  const lv=document.getElementById('lVer'); if(lv) lv.textContent='v'+APP_VERSION;
   // Lang selects
   ['langAuth','langSett'].forEach(id => { const e=document.getElementById(id); if(e) e.value=lang; });
   renderSettings();
@@ -1641,6 +1651,96 @@ function relativeTime(date) {
   const m = Math.floor(diff/60);
   if (m < 60) return `${m} ${t('minsAgo')}`;
   return date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+// ══════════════════════════════════════════════
+//  PWA INSTALL
+// ══════════════════════════════════════════════
+let deferredInstallPrompt = null;
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches
+  || window.navigator.standalone === true;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  updateInstallUI();
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  updateInstallUI();
+});
+
+function updateInstallUI() {
+  const btnAndroid  = document.getElementById('siInstall');
+  const btnIOS      = document.getElementById('siInstallIOS');
+  const btnDone     = document.getElementById('siInstalled');
+  const secInst     = document.getElementById('sInstLbl');
+  if (!btnAndroid) return;
+
+  if (isInStandaloneMode) {
+    btnAndroid.style.display = 'none';
+    btnIOS.style.display = 'none';
+    btnDone.style.display = 'flex';
+    if (secInst) secInst.textContent = t('sInst');
+  } else if (deferredInstallPrompt) {
+    btnAndroid.style.display = 'flex';
+    btnIOS.style.display = 'none';
+    btnDone.style.display = 'none';
+    if (secInst) secInst.textContent = t('sInst');
+  } else if (isIOS) {
+    btnAndroid.style.display = 'none';
+    btnIOS.style.display = 'flex';
+    btnDone.style.display = 'none';
+    if (secInst) secInst.textContent = t('sInst');
+  } else {
+    // Desktop or already installed — show hint anyway
+    btnAndroid.style.display = 'none';
+    btnIOS.style.display = 'none';
+    btnDone.style.display = isInStandaloneMode ? 'flex' : 'none';
+    if (secInst) secInst.textContent = t('sInst');
+  }
+  // Update text
+  setText('sInstall','sInstall');
+  setText('sInstallIOS','sInstallIOS');
+  setText('sInstalled','sInstalled');
+  setText('sInstLbl','sInst');
+}
+
+async function doInstallPWA() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const choice = await deferredInstallPrompt.userChoice;
+  if (choice.outcome === 'accepted') {
+    deferredInstallPrompt = null;
+    updateInstallUI();
+    showToast('✅ '+t('sInstalled'),'ok');
+  }
+}
+
+function showIOSInstall() {
+  openModal(`
+    <div class="mttl">${t('iosInstTitle')} 🍎</div>
+    <div style="display:flex;flex-direction:column;gap:16px;margin:16px 0">
+      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
+        <span style="font-size:32px">1️⃣</span>
+        <div>
+          <div style="font-weight:700;font-size:14px">${t('iosInstStep1')}</div>
+          <div style="font-size:28px;margin-top:4px">⎙</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
+        <span style="font-size:32px">2️⃣</span>
+        <div style="font-weight:700;font-size:14px">${t('iosInstStep2')}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
+        <span style="font-size:32px">3️⃣</span>
+        <div style="font-weight:700;font-size:14px">${t('iosInstStep3')}</div>
+      </div>
+    </div>
+    <button class="btn btn-p" onclick="closeModal()">${t('cancel')}</button>
+  `);
 }
 
 // ══════════════════════════════════════════════
