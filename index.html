@@ -1,0 +1,1604 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1a73e8">
+<title>Family Tracker</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<script>
+// ╔══════════════════════════════════════════════════════════╗
+// ║  APP CONFIGURATION – Edit these values                   ║
+// ╚══════════════════════════════════════════════════════════╝
+const APP_VERSION        = "1.0.0";
+const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
+
+// 🔥 REPLACE WITH YOUR FIREBASE CONFIG (Firebase Console → Project Settings)
+const firebaseConfig = {
+apiKey: "AIzaSyBi1RUxou3oFhsVVilN0CulCBSPobbZMao",
+authDomain: "location-56469.firebaseapp.com",
+projectId: "location-56469",
+storageBucket: "location-56469.firebasestorage.app",
+messagingSenderId: "892628974888",
+appId: "1:892628974888:web:c33b8b031f3272fce5e41d"
+};
+</script>
+
+<!-- Prevent dark/light flash -->
+<script>
+(function(){
+  const t=localStorage.getItem('theme');
+  const d=window.matchMedia('(prefers-color-scheme:dark)').matches;
+  document.documentElement.setAttribute('data-theme',t||(d?'dark':'light'));
+})();
+</script>
+
+<style>
+/* ════════════ VARIABLES ════════════ */
+:root{
+  --primary:#1a73e8; --primary-d:#1557b0;
+  --green:#34a853; --red:#ea4335; --yellow:#fbbc04;
+  --bg:#f1f3f4; --bg2:#ffffff; --bg3:#e8eaed;
+  --text:#202124; --text2:#5f6368;
+  --border:#dadce0; --card:#ffffff;
+  --shadow:0 2px 10px rgba(0,0,0,.12);
+  --nav:64px; --hdr:56px;
+  --radius:14px;
+}
+[data-theme="dark"]{
+  --bg:#0f0f0f; --bg2:#1c1c1e; --bg3:#2c2c2e;
+  --text:#f5f5f7; --text2:#8e8e93;
+  --border:#3a3a3c; --card:#1c1c1e;
+  --shadow:0 2px 10px rgba(0,0,0,.5);
+}
+/* ════════════ BASE ════════════ */
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;font-family:'Heebo',-apple-system,sans-serif;background:var(--bg);color:var(--text)}
+[hidden]{display:none!important}
+button{font-family:inherit;cursor:pointer}
+
+/* ════════════ LOADING ════════════ */
+#vLoading{
+  position:fixed;inset:0;
+  background:linear-gradient(135deg,#1a73e8,#0d47a1);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  z-index:9999;transition:opacity .5s;
+}
+.ll{font-size:80px;animation:bounce 1.8s ease-in-out infinite}
+.lt{color:#fff;font-size:28px;font-weight:900;margin-top:16px}
+.ls{color:rgba(255,255,255,.7);font-size:14px;margin-top:8px}
+.lsp{width:38px;height:38px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;margin-top:32px}
+@keyframes bounce{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-14px) rotate(4deg)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ════════════ AUTH ════════════ */
+#vAuth{
+  position:fixed;inset:0;overflow-y:auto;
+  background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;
+}
+.al{font-size:64px;margin-bottom:12px}
+.at{font-size:26px;font-weight:900;text-align:center}
+.as{font-size:14px;color:var(--text2);text-align:center;margin:8px 0 28px}
+.acard{background:var(--card);border-radius:var(--radius);padding:22px;width:100%;max-width:400px;box-shadow:var(--shadow)}
+.atabs{display:flex;background:var(--bg3);border-radius:10px;overflow:hidden;margin-bottom:18px}
+.atab{flex:1;padding:10px;text-align:center;cursor:pointer;font-weight:700;font-size:14px;transition:background .2s}
+.atab.on{background:var(--primary);color:#fff}
+
+/* ════════════ FORMS ════════════ */
+.fg{margin-bottom:14px}
+.fl{font-size:12px;font-weight:700;color:var(--text2);margin-bottom:5px;display:block}
+.fi{
+  width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:10px;
+  font-size:15px;font-family:inherit;background:var(--bg);color:var(--text);
+  direction:inherit;transition:border-color .2s;
+}
+.fi:focus{outline:none;border-color:var(--primary)}
+
+/* ════════════ BUTTONS ════════════ */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:12px 18px;border:none;border-radius:10px;font-size:15px;font-weight:700;
+  font-family:inherit;cursor:pointer;transition:opacity .15s,transform .1s;width:100%;
+}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-p{background:var(--primary);color:#fff}
+.btn-s{background:var(--bg3);color:var(--text)}
+.btn-r{background:var(--red);color:#fff}
+.btn-g{background:var(--green);color:#fff}
+.btn-sm{padding:8px 14px;font-size:13px;width:auto}
+.btn-ico{padding:10px;width:40px;height:40px;border-radius:50%}
+.mt16{margin-top:16px}
+
+/* ════════════ APP SHELL ════════════ */
+#vApp{position:fixed;inset:0;display:flex;flex-direction:column}
+.hdr{
+  height:var(--hdr);background:var(--card);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 14px;gap:10px;flex-shrink:0;
+  box-shadow:var(--shadow);z-index:200;
+  padding-top:env(safe-area-inset-top);
+}
+.hdr-title{flex:1;font-size:18px;font-weight:900}
+.hdr-ver{font-size:10px;opacity:.4;font-weight:800}
+
+/* ════════════ TAB CONTENT ════════════ */
+.tc{flex:1;overflow:hidden;position:relative}
+.tp{position:absolute;inset:0;overflow-y:auto;display:none}
+.tp.on{display:block}
+
+/* ════════════ BOTTOM NAV ════════════ */
+#bnav{
+  height:var(--nav);background:var(--card);border-top:1px solid var(--border);
+  display:flex;align-items:center;flex-shrink:0;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.nb{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;padding:8px;cursor:pointer;background:none;border:none;font-family:inherit;
+}
+.nb.on .ni{filter:none}
+.nb.on .nl{color:var(--primary);font-weight:700}
+.ni{font-size:22px}
+.nl{font-size:10px;color:var(--text2)}
+
+/* ════════════ MAP ════════════ */
+#tp-map{padding:0}
+#map{width:100%;height:100%}
+.m-priv{
+  position:absolute;top:12px;right:12px;z-index:1000;
+  background:var(--card);border:none;border-radius:10px;padding:8px 14px;
+  font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;
+  box-shadow:var(--shadow);display:flex;align-items:center;gap:6px;color:var(--text);
+}
+.m-priv.hid{background:var(--red);color:#fff}
+.m-fab{
+  position:absolute;bottom:20px;right:20px;z-index:1000;
+  background:var(--primary);color:#fff;border:none;border-radius:50%;
+  width:52px;height:52px;font-size:26px;cursor:pointer;
+  box-shadow:0 4px 14px rgba(26,115,232,.4);
+  display:flex;align-items:center;justify-content:center;
+}
+.add-hint{
+  position:absolute;bottom:80px;left:50%;transform:translateX(-50%);z-index:1000;
+  background:rgba(0,0,0,.75);color:#fff;padding:10px 20px;border-radius:20px;
+  font-size:14px;font-weight:700;white-space:nowrap;
+  display:flex;align-items:center;gap:8px;
+}
+.add-hint button{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:4px 10px;font-family:inherit;font-size:12px;cursor:pointer}
+/* Member marker */
+.mm{
+  border:3px solid #fff;border-radius:50%;width:44px;height:44px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;font-weight:900;color:#fff;
+  box-shadow:0 2px 8px rgba(0,0,0,.35);cursor:pointer;
+}
+/* Point marker */
+.pm{
+  background:var(--red);border:2px solid #fff;
+  border-radius:50% 50% 50% 0;width:28px;height:28px;
+  transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 6px rgba(0,0,0,.3);
+}
+.pm-inner{transform:rotate(45deg);font-size:12px}
+/* Members overlay */
+#mems-overlay{position:absolute;top:12px;left:12px;z-index:999;display:flex;flex-direction:column;gap:6px;max-width:150px}
+.mem-chip{
+  background:var(--card);border-radius:20px;padding:5px 10px 5px 6px;
+  display:flex;align-items:center;gap:7px;cursor:pointer;
+  box-shadow:var(--shadow);font-size:12px;
+}
+.mem-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.mem-name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mem-time{font-size:10px;color:var(--text2)}
+
+/* ════════════ SECTIONS ════════════ */
+.sec{padding:16px}
+.sec-h{font-size:15px;font-weight:800;color:var(--text);margin-bottom:12px}
+.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:12px}
+.ci{
+  display:flex;align-items:center;gap:12px;padding:14px 16px;
+  border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;
+}
+.ci:last-child{border-bottom:none}
+.ci:active{background:var(--bg3)}
+.cii{font-size:22px;flex-shrink:0}
+.cib{flex:1;min-width:0}
+.cit{font-size:15px;font-weight:600}
+.cis{font-size:12px;color:var(--text2);margin-top:2px}
+
+/* ════════════ MEMBERS (GROUP TAB) ════════════ */
+.mc{
+  background:var(--card);border-radius:var(--radius);padding:14px 16px;
+  margin-bottom:10px;box-shadow:var(--shadow);display:flex;align-items:center;gap:12px;
+}
+.mav{
+  width:46px;height:46px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:18px;font-weight:900;color:#fff;flex-shrink:0;
+}
+.mn{font-size:15px;font-weight:700}
+.ms{font-size:12px;color:var(--text2);margin-top:3px}
+.badge{display:inline-block;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700}
+.bdg-p{background:rgba(26,115,232,.15);color:var(--primary)}
+.bdg-a{background:rgba(52,168,83,.15);color:var(--green)}
+.bdg-r{background:rgba(234,67,53,.15);color:var(--red)}
+
+/* ════════════ PERMISSIONS ════════════ */
+.perm-row{
+  display:flex;align-items:center;gap:10px;
+  background:var(--bg2);border-radius:10px;padding:10px 14px;margin-bottom:8px;
+}
+.perm-name{flex:1;font-size:14px;font-weight:600}
+/* Toggle switch */
+.sw{position:relative;width:46px;height:26px;flex-shrink:0}
+.sw input{opacity:0;width:0;height:0}
+.sw-sl{
+  position:absolute;inset:0;background:var(--border);border-radius:13px;cursor:pointer;
+  transition:background .2s;
+}
+.sw-sl::after{
+  content:'';position:absolute;width:20px;height:20px;background:#fff;
+  border-radius:50%;top:3px;left:3px;transition:transform .2s;
+  box-shadow:0 1px 3px rgba(0,0,0,.3);
+}
+.sw input:checked+.sw-sl{background:var(--primary)}
+.sw input:checked+.sw-sl::after{transform:translateX(20px)}
+
+/* ════════════ ONBOARD ════════════ */
+#vOnboard{
+  position:fixed;inset:0;background:var(--bg);overflow-y:auto;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;
+}
+.ol{font-size:72px;margin-bottom:20px}
+.ot{font-size:24px;font-weight:900;text-align:center;margin-bottom:8px}
+.os{font-size:14px;color:var(--text2);text-align:center;margin-bottom:28px}
+.oo{
+  background:var(--card);border:2px solid var(--border);border-radius:16px;
+  padding:20px;cursor:pointer;transition:border-color .2s,transform .1s;
+  display:flex;align-items:center;gap:16px;width:100%;max-width:380px;
+  margin-bottom:12px;
+}
+.oo:active{transform:scale(.98)}
+.oo:hover{border-color:var(--primary)}
+.oo-ico{font-size:36px}
+.oo-h{font-size:16px;font-weight:800}
+.oo-s{font-size:13px;color:var(--text2);margin-top:4px}
+
+/* ════════════ CODE DISPLAY ════════════ */
+.code-box{
+  background:var(--bg3);border-radius:12px;padding:16px 20px;text-align:center;
+  letter-spacing:6px;font-size:30px;font-weight:900;color:var(--primary);
+  font-family:monospace;user-select:all;cursor:pointer;
+}
+
+/* ════════════ MODAL ════════════ */
+.mov{
+  position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:3000;
+  display:flex;align-items:flex-end;justify-content:center;
+}
+.msh{
+  background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:520px;
+  max-height:88vh;overflow-y:auto;padding:20px;animation:slideUp .3s ease;
+}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.mhnd{width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 16px}
+.mttl{font-size:18px;font-weight:900;margin-bottom:16px}
+
+/* ════════════ SETTINGS ════════════ */
+.sg{margin-bottom:18px}
+.sl{font-size:11px;font-weight:800;color:var(--text2);margin-bottom:7px;padding:0 4px;letter-spacing:.5px}
+.si{
+  background:var(--card);display:flex;align-items:center;gap:12px;
+  padding:13px 16px;border-bottom:1px solid var(--border);cursor:pointer;
+}
+.si:first-of-type{border-radius:14px 14px 0 0}
+.si:last-of-type{border-radius:0 0 14px 14px;border-bottom:none}
+.si:only-of-type{border-radius:14px;border-bottom:none}
+.si-ico{font-size:20px}
+.si-txt{flex:1;font-size:14px;font-weight:500}
+.si-val{font-size:13px;color:var(--text2)}
+
+/* ════════════ FAB ════════════ */
+.fab{
+  position:fixed;bottom:calc(var(--nav)+16px);right:20px;
+  width:54px;height:54px;border-radius:50%;border:none;
+  background:var(--primary);color:#fff;font-size:26px;cursor:pointer;
+  box-shadow:0 4px 16px rgba(26,115,232,.4);
+  display:flex;align-items:center;justify-content:center;z-index:500;
+  transition:transform .2s;
+}
+.fab:active{transform:scale(.92)}
+
+/* ════════════ TOAST ════════════ */
+#toast{
+  position:fixed;bottom:calc(var(--nav)+16px);left:50%;
+  transform:translateX(-50%) translateY(100px);
+  background:#333;color:#fff;padding:11px 20px;border-radius:999px;
+  font-size:14px;font-weight:600;z-index:8000;
+  transition:transform .3s ease;white-space:nowrap;
+  max-width:calc(100vw - 40px);text-align:center;
+}
+#toast.show{transform:translateX(-50%) translateY(0)}
+#toast.ok{background:#1b5e20}
+#toast.err{background:var(--red)}
+
+/* ════════════ EMPTY ════════════ */
+.empty{text-align:center;padding:48px 20px;color:var(--text2)}
+.ei{font-size:54px;margin-bottom:12px}
+.et{font-size:17px;font-weight:700;color:var(--text)}
+.es{font-size:13px;margin-top:6px}
+
+/* ════════════ CONFETTI ════════════ */
+.cfw{position:fixed;inset:0;pointer-events:none;z-index:9998;overflow:hidden}
+@keyframes cfFall{0%{transform:translateY(-10px) rotate(0);opacity:1}100%{transform:translateY(105vh) rotate(720deg);opacity:0}}
+.cf{position:absolute;animation:cfFall linear forwards}
+
+/* ════════════ MISC ════════════ */
+.row{display:flex;gap:8px}
+.flex1{flex:1}
+select.lang-sel{
+  padding:8px 12px;border:none;background:transparent;
+  font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;color:var(--text);
+}
+.divider{height:1px;background:var(--border);margin:12px 0}
+.point-row{
+  display:flex;align-items:center;gap:12px;
+  background:var(--card);border-radius:12px;padding:14px;margin-bottom:10px;box-shadow:var(--shadow);
+}
+.point-ico{font-size:26px;flex-shrink:0}
+.point-info{flex:1}
+.point-name{font-size:15px;font-weight:700}
+.point-sub{font-size:12px;color:var(--text2);margin-top:3px}
+.point-actions{display:flex;gap:6px}
+.small-btn{
+  background:var(--bg3);border:none;border-radius:8px;padding:7px 12px;
+  font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;color:var(--text);
+}
+.small-btn.del{background:rgba(234,67,53,.15);color:var(--red)}
+@media print{.no-print{display:none!important}}
+</style>
+</head>
+<body>
+
+<!-- ══════════ SPLASH ══════════ -->
+<div id="vLoading">
+  <div class="ll">📍</div>
+  <div class="lt" id="lTitle">Family Tracker</div>
+  <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
+  <div class="lsp"></div>
+</div>
+
+<!-- ══════════ AUTH ══════════ -->
+<div id="vAuth" hidden>
+  <div class="al">📍</div>
+  <div class="at">Family Tracker</div>
+  <div class="as" id="aSubT">מעקב מיקום משפחתי חכם</div>
+  <div class="acard">
+    <div class="atabs">
+      <div class="atab on" id="tabLogin" onclick="switchAuthTab('login')" id="tabLoginBtn"></div>
+      <div class="atab" id="tabReg" onclick="switchAuthTab('reg')" id="tabRegBtn"></div>
+    </div>
+    <div id="formLogin">
+      <div class="fg"><label class="fl" id="lEmail"></label>
+        <input class="fi" type="email" id="iEmail" autocomplete="email"></div>
+      <div class="fg"><label class="fl" id="lPass"></label>
+        <input class="fi" type="password" id="iPass" autocomplete="current-password"
+          onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <button class="btn btn-p" onclick="doLogin()" id="bLogin"></button>
+    </div>
+    <div id="formReg" hidden>
+      <div class="fg"><label class="fl" id="lName"></label>
+        <input class="fi" type="text" id="iName" autocomplete="name"></div>
+      <div class="fg"><label class="fl" id="lEmail2"></label>
+        <input class="fi" type="email" id="iEmail2" autocomplete="email"></div>
+      <div class="fg"><label class="fl" id="lPass2"></label>
+        <input class="fi" type="password" id="iPass2" autocomplete="new-password"
+          onkeydown="if(event.key==='Enter')doRegister()"></div>
+      <button class="btn btn-p" onclick="doRegister()" id="bReg"></button>
+    </div>
+    <div class="divider"></div>
+    <button class="btn btn-s" onclick="doGoogle()" id="bGoogle"></button>
+  </div>
+  <div class="mt16">
+    <select class="lang-sel" onchange="setLang(this.value)" id="langAuth">
+      <option value="he">🇮🇱 עברית</option>
+      <option value="en">🇺🇸 English</option>
+      <option value="ru">🇷🇺 Русский</option>
+    </select>
+  </div>
+</div>
+
+<!-- ══════════ ONBOARD ══════════ -->
+<div id="vOnboard" hidden>
+  <div class="ol">👨‍👩‍👧‍👦</div>
+  <div class="ot" id="obTitle"></div>
+  <div class="os" id="obSub"></div>
+  <div class="oo" onclick="showCreateGroup()">
+    <div class="oo-ico">➕</div>
+    <div><div class="oo-h" id="obCreate"></div><div class="oo-s" id="obCreateS"></div></div>
+  </div>
+  <div class="oo" onclick="showJoinInput()">
+    <div class="oo-ico">🔗</div>
+    <div><div class="oo-h" id="obJoin"></div><div class="oo-s" id="obJoinS"></div></div>
+  </div>
+  <div id="obCreate2" hidden style="width:100%;max-width:380px;margin-top:4px">
+    <div class="fg"><label class="fl" id="lGrpName"></label>
+      <input class="fi" type="text" id="iGrpName" maxlength="40"></div>
+    <button class="btn btn-g" onclick="doCreateGroup()" id="bCreateGrp"></button>
+    <button class="btn btn-s mt16" onclick="hideCreateGroup()" style="margin-top:8px" id="bBackOB"></button>
+  </div>
+  <div id="obJoin2" hidden style="width:100%;max-width:380px;margin-top:4px">
+    <div class="fg">
+      <input class="fi" type="text" id="iJoinCode" maxlength="8"
+        style="text-align:center;letter-spacing:4px;font-size:22px;text-transform:uppercase"
+        placeholder="XXXXXXXX" oninput="this.value=this.value.toUpperCase()">
+    </div>
+    <button class="btn btn-p" onclick="doJoinGroup()" id="bJoin"></button>
+    <button class="btn btn-s" onclick="hideJoinInput()" style="margin-top:8px" id="bBackOB2"></button>
+  </div>
+  <button class="btn btn-s mt16" onclick="doLogout()" style="max-width:200px;margin-top:12px" id="bObLogout"></button>
+</div>
+
+<!-- ══════════ APP ══════════ -->
+<div id="vApp" hidden>
+  <!-- Header -->
+  <div class="hdr no-print">
+    <span style="font-size:22px">📍</span>
+    <span class="hdr-title" id="hdrTitle"></span>
+    <span class="hdr-ver">v<span id="verBadge">1.0.0</span></span>
+    <button class="btn-ico btn btn-s" onclick="toggleTheme()" id="themeBtn" style="background:var(--bg3)">🌙</button>
+  </div>
+
+  <!-- Tab content -->
+  <div class="tc">
+
+    <!-- MAP -->
+    <div class="tp on" id="tp-map">
+      <div id="map"></div>
+      <!-- Privacy btn -->
+      <button class="m-priv no-print" id="privBtn" onclick="togglePrivacy()">
+        <span id="privIco">👁️</span><span id="privLbl"></span>
+      </button>
+      <!-- Add point hint -->
+      <div class="add-hint no-print" id="addHint" hidden>
+        <span id="addHintTxt"></span>
+        <button onclick="cancelAddPoint()">✕</button>
+      </div>
+      <!-- Members overlay -->
+      <div id="memsOverlay" class="no-print"></div>
+    </div>
+
+    <!-- POINTS -->
+    <div class="tp" id="tp-points">
+      <div class="sec">
+        <div class="sec-h" id="ptTitle"></div>
+        <div id="ptList"></div>
+      </div>
+      <button class="fab no-print" onclick="startAddPoint()" title="+">＋</button>
+    </div>
+
+    <!-- GROUP -->
+    <div class="tp" id="tp-group">
+      <div class="sec">
+        <div id="grpInfoCard"></div>
+        <div class="sec-h" id="memsTitleEl" style="margin-top:16px"></div>
+        <div id="grpMembers"></div>
+        <div class="sec-h" id="permTitleEl" style="margin-top:8px"></div>
+        <div class="os" id="permDesc" style="margin-bottom:10px;text-align:right"></div>
+        <div id="permsList"></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="tp" id="tp-settings">
+      <div class="sec">
+
+        <div class="sg">
+          <div class="sl" id="sAccLbl"></div>
+          <div class="si" onclick="editProfile()">
+            <span class="si-ico">👤</span>
+            <span class="si-txt" id="sProfile"></span>
+            <span class="si-val" id="sMyName"></span>
+          </div>
+        </div>
+
+        <div class="sg">
+          <div class="sl" id="sDispLbl"></div>
+          <div class="si" onclick="toggleTheme()">
+            <span class="si-ico" id="sThemeIco">🌙</span>
+            <span class="si-txt" id="sThemeTxt"></span>
+            <span class="si-val" id="sThemeVal"></span>
+          </div>
+          <div class="si">
+            <span class="si-ico">🌐</span>
+            <span class="si-txt" id="sLangTxt"></span>
+            <select class="lang-sel" onchange="setLang(this.value)" id="langSett">
+              <option value="he">🇮🇱 עברית</option>
+              <option value="en">🇺🇸 English</option>
+              <option value="ru">🇷🇺 Русский</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="sg">
+          <div class="sl" id="sTrackLbl"></div>
+          <div class="si" onclick="reqNotifPerm()">
+            <span class="si-ico">🔔</span>
+            <span class="si-txt" id="sNotif"></span>
+            <span class="si-val" id="sNotifVal"></span>
+          </div>
+          <div class="si" onclick="centerOnMe()">
+            <span class="si-ico">🎯</span>
+            <span class="si-txt" id="sCenter"></span>
+          </div>
+        </div>
+
+        <div class="sg">
+          <div class="sl" id="sGrpLbl"></div>
+          <div class="si" onclick="showGroupCode()">
+            <span class="si-ico">🔗</span>
+            <span class="si-txt" id="sCode"></span>
+          </div>
+          <div class="si" onclick="leaveGroup()" style="color:var(--red)">
+            <span class="si-ico">🚪</span>
+            <span class="si-txt" id="sLeave"></span>
+          </div>
+        </div>
+
+        <div class="sg">
+          <div class="si" onclick="doLogout()" style="border-radius:14px!important;color:var(--red)">
+            <span class="si-ico">🔓</span>
+            <span class="si-txt" id="sLogout"></span>
+          </div>
+        </div>
+
+        <div style="text-align:center;padding:16px 0;color:var(--text2);font-size:12px">
+          Family Tracker v<span id="verFoot">1.0.0</span> · dimitryu
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /tc -->
+
+  <!-- Bottom nav -->
+  <nav id="bnav" class="no-print">
+    <button class="nb on" id="nb-map" onclick="switchTab('map')">
+      <span class="ni">🗺️</span><span class="nl" id="nlMap"></span>
+    </button>
+    <button class="nb" id="nb-points" onclick="switchTab('points')">
+      <span class="ni">📍</span><span class="nl" id="nlPoints"></span>
+    </button>
+    <button class="nb" id="nb-group" onclick="switchTab('group')">
+      <span class="ni">👥</span><span class="nl" id="nlGroup"></span>
+    </button>
+    <button class="nb" id="nb-settings" onclick="switchTab('settings')">
+      <span class="ni">⚙️</span><span class="nl" id="nlSettings"></span>
+    </button>
+  </nav>
+</div>
+
+<!-- ══════════ MODAL ══════════ -->
+<div class="mov" id="modal" hidden onclick="closeModalOuter(event)">
+  <div class="msh"><div class="mhnd"></div><div id="modalBody"></div></div>
+</div>
+
+<!-- ══════════ TOAST ══════════ -->
+<div id="toast"></div>
+
+<!-- ══════════ CONFETTI ══════════ -->
+<div class="cfw" id="confetti"></div>
+
+<!-- ══════════ SCRIPTS ══════════ -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+// ══════════════════════════════════════════════
+//  GLOBALS
+// ══════════════════════════════════════════════
+let db, auth;
+let me = null;           // Firebase User
+let myProfile = null;    // Firestore user doc
+let groupId = null;      // current group id
+let groupData = null;    // current group doc
+let members = {};        // uid → {name, lat, lng, ts, hidden, color}
+let points = [];         // [{id, name, lat, lng, radius, createdBy, notifyMe}]
+let myLat = null, myLng = null;
+let isHidden = false;
+let addPointMode = false;
+let watchId = null;
+let locInterval = null;
+let arrivedSet = new Set();  // geofence points already notified
+let mapObj = null;
+let memberMarkers = {};  // uid → L.marker
+let pointMarkers = {};   // id  → L.marker
+let myMarker = null;
+let myAccCircle = null;
+let unsubLocs = null;
+let unsubPts = null;
+let unsubGrp = null;
+let lang = localStorage.getItem('lang') || 'he';
+let theme = localStorage.getItem('theme') || 'light';
+let mapInit = false;
+
+// ══════════════════════════════════════════════
+//  MEMBER COLORS
+// ══════════════════════════════════════════════
+const COLORS = ['#1a73e8','#e53935','#2e7d32','#f57c00','#7b1fa2','#00838f','#6d4c41','#546e7a'];
+function colorForUid(uid) {
+  let h = 0;
+  for (let c of uid) h = (h * 31 + c.charCodeAt(0)) & 0xffffff;
+  return COLORS[Math.abs(h) % COLORS.length];
+}
+function initials(name) {
+  if (!name) return '?';
+  return name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0,2);
+}
+
+// ══════════════════════════════════════════════
+//  I18N
+// ══════════════════════════════════════════════
+const TR = {
+  he:{
+    login:'כניסה',reg:'הרשמה',email:'אימייל',pass:'סיסמה',name:'שם מלא',
+    btnLogin:'כניסה',btnReg:'הרשמה',btnGoogle:'🔑 כניסה עם Google',btnLogout:'יציאה',
+    obTitle:'ברוכים הבאים!',obSub:'הצטרף לקבוצה משפחתית',
+    obCreate:'צור קבוצה חדשה',obCreateS:'אתה תהיה מנהל הקבוצה',
+    obJoin:'הצטרף לקבוצה קיימת',obJoinS:'הכנס קוד הצטרפות',
+    grpName:'שם הקבוצה (אופציונלי)',btnCreate:'צור קבוצה',btnJoin:'הצטרף',btnBack:'חזרה',
+    navMap:'מפה',navPts:'נקודות',navGrp:'קבוצה',navSet:'הגדרות',
+    privOn:'גלוי',privOff:'מוסתר',
+    ptTitle:'נקודות עניין',noPts:'אין נקודות עדיין',noPtsS:'לחץ + להוספה על המפה',
+    addHint:'לחץ על המפה להוספת נקודה',
+    addPt:'הוסף נקודה',ptName:'שם הנקודה',ptRadius:'רדיוס התראה (מ׳)',ptRadDef:'200',
+    save:'שמור',cancel:'ביטול',del:'מחק',goMap:'מקם על מפה',
+    grpTitle:'הקבוצה שלי',memsTitle:'חברי הקבוצה',permTitle:'הרשאות מעקב',
+    permDesc:'מי רשאי לראות את המיקום שלי?',
+    admin:'מנהל',me:'(אני)',
+    sAcc:'חשבון',sProf:'הפרופיל שלי',sDisp:'תצוגה',sTheme:'ערכת צבעים',
+    sLang:'שפה',sTrack:'מעקב',sNotif:'התראות',sCenter:'מרכז על מיקומי',
+    sGrp:'קבוצה',sCode:'קוד הצטרפות',sLeave:'עזוב קבוצה',sLogout:'התנתק',
+    light:'בהיר',dark:'כהה',
+    arriveAt:'הגעת ל',codeCopied:'הקוד הועתק!',
+    codeTitle:'קוד ההצטרפות',codeSub:'שתף עם בני המשפחה · לחץ להעתקה',
+    editProf:'עריכת שם תצוגה',updName:'עדכן שם',
+    errLogin:'שגיאה בכניסה',errReg:'שגיאה בהרשמה',errJoin:'קוד לא נמצא',
+    errLoc:'לא ניתן לאחזר מיקום',
+    okCreate:'הקבוצה נוצרה! 🎉',okJoin:'הצטרפת לקבוצה! 🎉',
+    notifOn:'התראות פעילות',notifOff:'התראות חסומות',notifAsk:'לחץ לאישור התראות',
+    confirmLeave:'האם לעזוב את הקבוצה?',confirmDelPt:'למחוק את הנקודה?',
+    lastSeen:'נראה לאחרונה',now:'עכשיו',minsAgo:'ד׳ לפני',
+    radiusM:'רדיוס: ',meters:'מ׳',
+    noGps:'GPS לא זמין',
+  },
+  en:{
+    login:'Login',reg:'Register',email:'Email',pass:'Password',name:'Full name',
+    btnLogin:'Login',btnReg:'Register',btnGoogle:'🔑 Sign in with Google',btnLogout:'Logout',
+    obTitle:'Welcome!',obSub:'Join a family group',
+    obCreate:'Create new group',obCreateS:'You will be the admin',
+    obJoin:'Join existing group',obJoinS:'Enter an invite code',
+    grpName:'Group name (optional)',btnCreate:'Create group',btnJoin:'Join',btnBack:'Back',
+    navMap:'Map',navPts:'Points',navGrp:'Group',navSet:'Settings',
+    privOn:'Visible',privOff:'Hidden',
+    ptTitle:'Points of Interest',noPts:'No points yet',noPtsS:'Tap + to add on map',
+    addHint:'Tap on the map to add a point',
+    addPt:'Add Point',ptName:'Point name',ptRadius:'Alert radius (m)',ptRadDef:'200',
+    save:'Save',cancel:'Cancel',del:'Delete',goMap:'Place on map',
+    grpTitle:'My Group',memsTitle:'Members',permTitle:'Tracking Permissions',
+    permDesc:'Who can see my location?',
+    admin:'Admin',me:'(me)',
+    sAcc:'ACCOUNT',sProf:'My Profile',sDisp:'DISPLAY',sTheme:'Theme',
+    sLang:'Language',sTrack:'TRACKING',sNotif:'Notifications',sCenter:'Center on me',
+    sGrp:'GROUP',sCode:'Invite Code',sLeave:'Leave Group',sLogout:'Logout',
+    light:'Light',dark:'Dark',
+    arriveAt:'Arrived at',codeCopied:'Code copied!',
+    codeTitle:'Invite Code',codeSub:'Share with family · tap to copy',
+    editProf:'Edit display name',updName:'Update name',
+    errLogin:'Login failed',errReg:'Registration failed',errJoin:'Code not found',
+    errLoc:'Could not get location',
+    okCreate:'Group created! 🎉',okJoin:'Joined the group! 🎉',
+    notifOn:'Notifications enabled',notifOff:'Notifications blocked',notifAsk:'Tap to enable notifications',
+    confirmLeave:'Leave this group?',confirmDelPt:'Delete this point?',
+    lastSeen:'Last seen',now:'just now',minsAgo:'min ago',
+    radiusM:'Radius: ',meters:'m',
+    noGps:'GPS unavailable',
+  },
+  ru:{
+    login:'Вход',reg:'Регистрация',email:'Эл. почта',pass:'Пароль',name:'Полное имя',
+    btnLogin:'Войти',btnReg:'Зарегистрироваться',btnGoogle:'🔑 Войти через Google',btnLogout:'Выйти',
+    obTitle:'Добро пожаловать!',obSub:'Присоединяйтесь к семейной группе',
+    obCreate:'Создать новую группу',obCreateS:'Вы будете администратором',
+    obJoin:'Вступить в группу',obJoinS:'Введите код приглашения',
+    grpName:'Название группы (необязательно)',btnCreate:'Создать группу',btnJoin:'Присоединиться',btnBack:'Назад',
+    navMap:'Карта',navPts:'Точки',navGrp:'Группа',navSet:'Настройки',
+    privOn:'Виден',privOff:'Скрыт',
+    ptTitle:'Точки интереса',noPts:'Нет точек',noPtsS:'Нажмите + для добавления',
+    addHint:'Нажмите на карту для добавления точки',
+    addPt:'Добавить точку',ptName:'Название точки',ptRadius:'Радиус оповещения (м)',ptRadDef:'200',
+    save:'Сохранить',cancel:'Отмена',del:'Удалить',goMap:'Разместить на карте',
+    grpTitle:'Моя группа',memsTitle:'Участники',permTitle:'Разрешения',
+    permDesc:'Кто может видеть моё местоположение?',
+    admin:'Администратор',me:'(я)',
+    sAcc:'АККАУНТ',sProf:'Мой профиль',sDisp:'ОТОБРАЖЕНИЕ',sTheme:'Тема',
+    sLang:'Язык',sTrack:'ОТСЛЕЖИВАНИЕ',sNotif:'Уведомления',sCenter:'Центрировать на мне',
+    sGrp:'ГРУППА',sCode:'Код приглашения',sLeave:'Покинуть группу',sLogout:'Выйти',
+    light:'Светлая',dark:'Тёмная',
+    arriveAt:'Прибыл в',codeCopied:'Код скопирован!',
+    codeTitle:'Код приглашения',codeSub:'Поделитесь с семьёй · нажмите для копирования',
+    editProf:'Изменить имя',updName:'Обновить имя',
+    errLogin:'Ошибка входа',errReg:'Ошибка регистрации',errJoin:'Код не найден',
+    errLoc:'Не удалось получить местоположение',
+    okCreate:'Группа создана! 🎉',okJoin:'Вы вступили в группу! 🎉',
+    notifOn:'Уведомления включены',notifOff:'Уведомления заблокированы',notifAsk:'Нажмите для включения',
+    confirmLeave:'Покинуть эту группу?',confirmDelPt:'Удалить эту точку?',
+    lastSeen:'Последний раз',now:'только что',minsAgo:'мин назад',
+    radiusM:'Радиус: ',meters:'м',
+    noGps:'GPS недоступен',
+  }
+};
+const t = k => (TR[lang]||TR.en)[k] || (TR.en[k]) || k;
+
+// ══════════════════════════════════════════════
+//  FIREBASE INIT
+// ══════════════════════════════════════════════
+function initFirebase() {
+  firebase.initializeApp(FIREBASE_CONFIG);
+  auth = firebase.auth();
+  db   = firebase.firestore();
+  auth.onAuthStateChanged(onAuth);
+}
+
+async function onAuth(user) {
+  if (user) {
+    me = user;
+    // Load or create user profile
+    const ref = db.collection('users').doc(me.uid);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      await ref.set({ name: me.displayName || me.email.split('@')[0], email: me.email, createdAt: new Date() });
+    }
+    myProfile = (await ref.get()).data();
+    // Check if user is in a group
+    const gSnap = await db.collection('users').doc(me.uid).get();
+    const gid = gSnap.data()?.groupId;
+    if (gid) {
+      groupId = gid;
+      await initApp();
+    } else {
+      showView('vOnboard');
+      renderUI();
+    }
+  } else {
+    me = null; myProfile = null; groupId = null;
+    showView('vAuth');
+    renderUI();
+  }
+  hideSplash();
+}
+
+// ══════════════════════════════════════════════
+//  VIEW MANAGEMENT
+// ══════════════════════════════════════════════
+function showView(id) {
+  ['vLoading','vAuth','vOnboard','vApp'].forEach(v => {
+    document.getElementById(v).hidden = (v !== id);
+  });
+}
+function hideSplash() {
+  const el = document.getElementById('vLoading');
+  el.style.opacity = '0';
+  setTimeout(() => el.hidden = true, 500);
+}
+
+// ══════════════════════════════════════════════
+//  AUTH ACTIONS
+// ══════════════════════════════════════════════
+function switchAuthTab(t) {
+  document.getElementById('formLogin').hidden = t !== 'login';
+  document.getElementById('formReg').hidden = t !== 'reg';
+  document.getElementById('tabLogin').className = 'atab' + (t==='login'?' on':'');
+  document.getElementById('tabReg').className = 'atab' + (t==='reg'?' on':'');
+}
+
+async function doLogin() {
+  const email = document.getElementById('iEmail').value.trim();
+  const pass  = document.getElementById('iPass').value;
+  if (!email||!pass) return;
+  try {
+    await auth.signInWithEmailAndPassword(email, pass);
+  } catch(e) { showToast(t('errLogin')+': '+e.message,'err'); }
+}
+
+async function doRegister() {
+  const name  = document.getElementById('iName').value.trim();
+  const email = document.getElementById('iEmail2').value.trim();
+  const pass  = document.getElementById('iPass2').value;
+  if (!name||!email||!pass) return;
+  try {
+    const cred = await auth.createUserWithEmailAndPassword(email, pass);
+    await cred.user.updateProfile({ displayName: name });
+    await db.collection('users').doc(cred.user.uid).set({ name, email, createdAt: new Date() });
+  } catch(e) { showToast(t('errReg')+': '+e.message,'err'); }
+}
+
+async function doGoogle() {
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    await auth.signInWithPopup(provider);
+  } catch(e) { showToast(t('errLogin'),'err'); }
+}
+
+async function doLogout() {
+  stopTracking();
+  unsubAll();
+  groupId = null; groupData = null;
+  members = {}; points = [];
+  await auth.signOut();
+}
+
+// ══════════════════════════════════════════════
+//  ONBOARDING
+// ══════════════════════════════════════════════
+function showCreateGroup() {
+  document.getElementById('obCreate2').hidden = false;
+  document.getElementById('obJoin2').hidden = true;
+}
+function hideCreateGroup() {
+  document.getElementById('obCreate2').hidden = true;
+}
+function showJoinInput() {
+  document.getElementById('obJoin2').hidden = false;
+  document.getElementById('obCreate2').hidden = true;
+}
+function hideJoinInput() {
+  document.getElementById('obJoin2').hidden = true;
+}
+
+async function doCreateGroup() {
+  const name = document.getElementById('iGrpName').value.trim() || (myProfile?.name + "'s Family");
+  const code = genCode(8);
+  try {
+    const gRef = db.collection('groups').doc();
+    groupId = gRef.id;
+    await gRef.set({
+      name, adminUid: me.uid,
+      members: [me.uid],
+      joinCode: code,
+      permissions: {},
+      createdAt: new Date()
+    });
+    await db.collection('joinCodes').doc(code).set({ groupId, createdAt: new Date() });
+    await db.collection('users').doc(me.uid).update({ groupId });
+    confetti();
+    showToast(t('okCreate'),'ok');
+    await initApp();
+  } catch(e) { showToast(e.message,'err'); }
+}
+
+async function doJoinGroup() {
+  const code = document.getElementById('iJoinCode').value.trim().toUpperCase();
+  if (code.length < 4) return;
+  try {
+    const snap = await db.collection('joinCodes').doc(code).get();
+    if (!snap.exists) { showToast(t('errJoin'),'err'); return; }
+    groupId = snap.data().groupId;
+    await db.collection('groups').doc(groupId).update({
+      members: firebase.firestore.FieldValue.arrayUnion(me.uid)
+    });
+    await db.collection('users').doc(me.uid).update({ groupId });
+    confetti();
+    showToast(t('okJoin'),'ok');
+    await initApp();
+  } catch(e) { showToast(e.message,'err'); }
+}
+
+function genCode(len) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:len}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+
+// ══════════════════════════════════════════════
+//  APP INIT
+// ══════════════════════════════════════════════
+async function initApp() {
+  showView('vApp');
+  renderUI();
+  // Load group
+  await loadGroup();
+  // Subscribe to locations
+  subLocations();
+  // Subscribe to points
+  subPoints();
+  // Init map (after DOM is shown)
+  setTimeout(() => { if(!mapInit) initMap(); }, 300);
+  // Start tracking
+  startTracking();
+  // Request notifs
+  reqNotifPermQuiet();
+}
+
+function unsubAll() {
+  if (unsubLocs) { unsubLocs(); unsubLocs = null; }
+  if (unsubPts)  { unsubPts();  unsubPts  = null; }
+  if (unsubGrp)  { unsubGrp();  unsubGrp  = null; }
+}
+
+// ══════════════════════════════════════════════
+//  GROUP
+// ══════════════════════════════════════════════
+async function loadGroup() {
+  if (!groupId) return;
+  const snap = await db.collection('groups').doc(groupId).get();
+  groupData = snap.data();
+  renderGroupTab();
+  // Subscribe to live group updates (permissions)
+  if (unsubGrp) unsubGrp();
+  unsubGrp = db.collection('groups').doc(groupId).onSnapshot(s => {
+    groupData = s.data();
+    renderGroupTab();
+  });
+}
+
+function renderGroupTab() {
+  if (!groupData) return;
+  // Group info card
+  const isAdmin = groupData.adminUid === me.uid;
+  document.getElementById('grpInfoCard').innerHTML = `
+    <div class="card">
+      <div class="ci" style="cursor:default">
+        <span class="cii">👨‍👩‍👧‍👦</span>
+        <div class="cib">
+          <div class="cit">${esc(groupData.name)}</div>
+          <div class="cis">${groupData.members?.length||1} ${t('memsTitle').toLowerCase()} · ${isAdmin?'<span class="badge bdg-a">'+t('admin')+'</span>':''}</div>
+        </div>
+        <button class="small-btn" onclick="showGroupCode()">#${esc(groupData.joinCode||'')}</button>
+      </div>
+    </div>`;
+
+  // Members list
+  const memsEl = document.getElementById('grpMembers');
+  memsEl.innerHTML = '';
+  (groupData.members || [me.uid]).forEach(uid => {
+    const m = members[uid] || {};
+    const name = m.name || uid.slice(0,8);
+    const color = colorForUid(uid);
+    const isMe = uid === me.uid;
+    const isAdm = uid === groupData.adminUid;
+    const lastSeen = m.ts ? relativeTime(m.ts.toDate ? m.ts.toDate() : new Date(m.ts)) : '';
+    memsEl.innerHTML += `
+      <div class="mc">
+        <div class="mav" style="background:${color}">${initials(name)}</div>
+        <div style="flex:1">
+          <div class="mn">${esc(name)} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''} ${isAdm?'<span class="badge bdg-a">'+t('admin')+'</span>':''}</div>
+          <div class="ms">${lastSeen ? t('lastSeen')+': '+lastSeen : ''}</div>
+        </div>
+        ${isAdmin && !isMe ? `<button class="small-btn del" onclick="removeMember('${uid}')">✕</button>` : ''}
+      </div>`;
+  });
+
+  // Permissions
+  renderPermissions();
+}
+
+function renderPermissions() {
+  if (!groupData) return;
+  const perms = groupData.permissions || {};
+  const myPerms = perms[me.uid] || [];  // UIDs who are ALLOWED to see me
+  const el = document.getElementById('permsList');
+  el.innerHTML = '';
+  (groupData.members || []).filter(uid => uid !== me.uid).forEach(uid => {
+    const m = members[uid] || {};
+    const name = m.name || uid.slice(0,8);
+    const checked = myPerms.includes(uid);
+    el.innerHTML += `
+      <div class="perm-row">
+        <div style="width:36px;height:36px;border-radius:50%;background:${colorForUid(uid)};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0">${initials(name)}</div>
+        <span class="perm-name">${esc(name)}</span>
+        <label class="sw">
+          <input type="checkbox" ${checked?'checked':''} onchange="togglePerm('${uid}',this.checked)">
+          <span class="sw-sl"></span>
+        </label>
+      </div>`;
+  });
+  if (!el.innerHTML) el.innerHTML = '<div class="cis" style="text-align:center;padding:12px">' + (groupData.members?.length>1 ? t('permDesc') : '–') + '</div>';
+}
+
+async function togglePerm(targetUid, allow) {
+  const perms = groupData?.permissions || {};
+  const myList = [...(perms[me.uid] || [])];
+  if (allow) { if (!myList.includes(targetUid)) myList.push(targetUid); }
+  else { const i = myList.indexOf(targetUid); if (i > -1) myList.splice(i,1); }
+  await db.collection('groups').doc(groupId).update({
+    [`permissions.${me.uid}`]: myList
+  });
+}
+
+async function removeMember(uid) {
+  if (!confirm(t('confirmLeave'))) return;
+  await db.collection('groups').doc(groupId).update({
+    members: firebase.firestore.FieldValue.arrayRemove(uid)
+  });
+  await db.collection('users').doc(uid).update({ groupId: se.firestore.FieldValue.delete() });
+}
+
+// ══════════════════════════════════════════════
+//  MAP
+// ══════════════════════════════════════════════
+function initMap() {
+  if (mapInit) return;
+  mapInit = true;
+  const el = document.getElementById('map');
+  mapObj = L.map(el, { zoomControl: true, attributionControl: false })
+    .setView([31.7683, 35.2137], 10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap'
+  }).addTo(mapObj);
+  L.control.attribution({ prefix: false }).addTo(mapObj);
+  // Click to add point
+  mapObj.on('click', onMapClick);
+  setTimeout(() => mapObj.invalidateSize(), 200);
+}
+
+function onMapClick(e) {
+  if (!addPointMode) return;
+  openAddPointModal(e.latlng.lat, e.latlng.lng);
+  addPointMode = false;
+  document.getElementById('addHint').hidden = true;
+}
+
+function startAddPoint() {
+  addPointMode = true;
+  switchTab('map');
+  document.getElementById('addHint').hidden = false;
+  document.getElementById('addHintTxt').textContent = t('addHint');
+}
+function cancelAddPoint() {
+  addPointMode = false;
+  document.getElementById('addHint').hidden = true;
+}
+
+function openAddPointModal(lat, lng) {
+  const html = `
+    <div class="mttl">${t('addPt')}</div>
+    <div style="background:var(--bg3);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--text2)">
+      📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}
+    </div>
+    <div class="fg"><label class="fl">${t('ptName')}</label>
+      <input class="fi" type="text" id="mPtName" placeholder="${t('ptName')}" autofocus></div>
+    <div class="fg"><label class="fl">${t('ptRadius')}</label>
+      <input class="fi" type="number" id="mPtRadius" value="${t('ptRadDef')}" min="50" max="5000"></div>
+    <div class="row mt16">
+      <button class="btn btn-s flex1" onclick="closeModal()">${t('cancel')}</button>
+      <button class="btn btn-p flex1" onclick="savePoint(${lat},${lng})">${t('save')}</button>
+    </div>`;
+  openModal(html);
+  setTimeout(() => document.getElementById('mPtName')?.focus(), 100);
+}
+
+async function savePoint(lat, lng) {
+  const name   = document.getElementById('mPtName')?.value.trim();
+  const radius = parseInt(document.getElementById('mPtRadius')?.value) || 200;
+  if (!name) return;
+  await db.collection('groups').doc(groupId).collection('points').add({
+    name, lat, lng, radius, createdBy: me.uid, createdAt: new Date()
+  });
+  closeModal();
+  showToast('✅ '+name,'ok');
+  switchTab('points');
+}
+
+async function deletePoint(id) {
+  if (!confirm(t('confirmDelPt'))) return;
+  await db.collection('groups').doc(groupId).collection('points').doc(id).delete();
+  showToast(t('del'),'ok');
+}
+
+function subPoints() {
+  if (!groupId) return;
+  if (unsubPts) unsubPts();
+  unsubPts = db.collection('groups').doc(groupId).collection('points')
+    .onSnapshot(snap => {
+      points = snap.docs.map(d => ({id:d.id,...d.data()}));
+      renderPoints();
+      syncPointMarkers();
+    });
+}
+
+function renderPoints() {
+  const el = document.getElementById('ptList');
+  if (!points.length) {
+    el.innerHTML = `<div class="empty"><div class="ei">📍</div><div class="et">${t('noPts')}</div><div class="es">${t('noPtsS')}</div></div>`;
+    return;
+  }
+  el.innerHTML = points.map(p => `
+    <div class="point-row">
+      <div class="point-ico">📍</div>
+      <div class="point-info">
+        <div class="point-name">${esc(p.name)}</div>
+        <div class="point-sub">${t('radiusM')}${p.radius}${t('meters')}</div>
+      </div>
+      <div class="point-actions">
+        <button class="small-btn" onclick="flyToPoint(${p.lat},${p.lng})">${t('navMap')}</button>
+        <button class="small-btn del" onclick="deletePoint('${p.id}')">${t('del')}</button>
+      </div>
+    </div>`).join('');
+}
+
+function syncPointMarkers() {
+  if (!mapObj) return;
+  // Remove old
+  Object.entries(pointMarkers).forEach(([id, m]) => {
+    if (!points.find(p => p.id === id)) { mapObj.removeLayer(m); delete pointMarkers[id]; }
+  });
+  // Add new
+  points.forEach(p => {
+    if (!pointMarkers[p.id]) {
+      const icon = L.divIcon({
+        className: '', iconSize: [28,28], iconAnchor: [14,28],
+        html: `<div class="pm"><div class="pm-inner">📍</div></div>`
+      });
+      const marker = L.marker([p.lat, p.lng], {icon})
+        .addTo(mapObj)
+        .bindPopup(`<b>${esc(p.name)}</b><br>${t('radiusM')}${p.radius}${t('meters')}`);
+      // Radius circle
+      L.circle([p.lat, p.lng], {radius:p.radius, color:'#ea4335', fillColor:'#ea4335', fillOpacity:0.1, weight:1.5})
+        .addTo(mapObj);
+      pointMarkers[p.id] = marker;
+    }
+  });
+}
+
+function flyToPoint(lat, lng) {
+  if (!mapObj) return;
+  switchTab('map');
+  mapObj.flyTo([lat, lng], 16);
+}
+
+// ══════════════════════════════════════════════
+//  LOCATION TRACKING
+// ══════════════════════════════════════════════
+function startTracking() {
+  if (!navigator.geolocation) { showToast(t('noGps'),'err'); return; }
+  const opts = { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 };
+  watchId = navigator.geolocation.watchPosition(onPosition, onPosErr, opts);
+  // Fallback interval push every 30s even if watchPosition is slow
+  locInterval = setInterval(() => {
+    if (myLat) pushLocation(myLat, myLng);
+  }, LOCATION_UPDATE_MS);
+}
+
+function stopTracking() {
+  if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  if (locInterval) { clearInterval(locInterval); locInterval = null; }
+}
+
+function onPosition(pos) {
+  myLat = pos.coords.latitude;
+  myLng = pos.coords.longitude;
+  if (!isHidden) pushLocation(myLat, myLng);
+  updateMyMarker(myLat, myLng, pos.coords.accuracy);
+  checkGeofencing(myLat, myLng);
+}
+
+function onPosErr(err) {
+  console.warn('GPS error:', err.message);
+}
+
+async function pushLocation(lat, lng) {
+  if (!me || !groupId) return;
+  try {
+    await db.collection('locations').doc(me.uid).set({
+      lat, lng, uid: me.uid, groupId, name: myProfile?.name || me.email,
+      hidden: isHidden, ts: se.firestore.FieldValue.serverTimestamp()
+    });
+  } catch(e) { /* fail silently */ }
+}
+
+function subLocations() {
+  if (!groupId) return;
+  if (unsubLocs) unsubLocs();
+  unsubLocs = db.collection('locations')
+    .where('groupId','==',groupId)
+    .onSnapshot(snap => {
+      snap.docs.forEach(d => {
+        const data = d.data();
+        members[d.id] = data;
+        if (d.id !== me.uid) updateMemberMarker(d.id, data);
+      });
+      updateMembersOverlay();
+      renderGroupTab();
+    });
+}
+
+function updateMyMarker(lat, lng, accuracy) {
+  if (!mapObj) return;
+  const name = myProfile?.name || me?.email || '?';
+  const color = colorForUid(me.uid);
+  const icon = L.divIcon({
+    className:'', iconSize:[44,44], iconAnchor:[22,22],
+    html:`<div class="mm" style="background:${color}">${initials(name)}</div>`
+  });
+  if (!myMarker) {
+    myMarker = L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(mapObj)
+      .bindPopup(`<b>${esc(name)}</b> ${t('me')}`);
+    mapObj.setView([lat,lng],14);
+  } else {
+    myMarker.setLatLng([lat,lng]);
+    myMarker.setIcon(icon);
+  }
+  if (myAccCircle) mapObj.removeLayer(myAccCircle);
+  myAccCircle = L.circle([lat,lng],{radius:accuracy,color:'#1a73e8',fillColor:'#1a73e8',fillOpacity:0.08,weight:1}).addTo(mapObj);
+}
+
+function updateMemberMarker(uid, data) {
+  if (!mapObj || !data.lat || data.hidden) {
+    if (memberMarkers[uid]) { mapObj.removeLayer(memberMarkers[uid]); delete memberMarkers[uid]; }
+    return;
+  }
+  // Check if I have permission to see this member
+  const perms = groupData?.permissions || {};
+  const allowedToSeeMe = perms[uid] || [];
+  if (!allowedToSeeMe.includes(me.uid) && uid !== groupData?.adminUid) {
+    // Only show if they allow me to see them
+    // Default: everyone can see everyone until permissions are set
+  }
+  const color = colorForUid(uid);
+  const name = data.name || uid.slice(0,6);
+  const icon = L.divIcon({
+    className:'', iconSize:[44,44], iconAnchor:[22,22],
+    html:`<div class="mm" style="background:${color}">${initials(name)}</div>`
+  });
+  const ts = data.ts?.toDate ? data.ts.toDate() : null;
+  const popup = `<b>${esc(name)}</b><br><small>${ts ? t('lastSeen')+': '+relativeTime(ts) : ''}</small>`;
+  if (!memberMarkers[uid]) {
+    memberMarkers[uid] = L.marker([data.lat,data.lng],{icon}).addTo(mapObj).bindPopup(popup);
+  } else {
+    memberMarkers[uid].setLatLng([data.lat,data.lng]);
+    memberMarkers[uid].setIcon(icon);
+    memberMarkers[uid].setPopupContent(popup);
+  }
+}
+
+function updateMembersOverlay() {
+  const el = document.getElementById('memsOverlay');
+  if (!el) return;
+  const arr = Object.entries(members).filter(([uid]) => uid !== me.uid);
+  if (!arr.length) { el.innerHTML = ''; return; }
+  el.innerHTML = arr.map(([uid, d]) => {
+    const color = colorForUid(uid);
+    const name = d.name || uid.slice(0,6);
+    const ts = d.ts?.toDate ? d.ts.toDate() : null;
+    const ago = ts ? relativeTime(ts) : '';
+    const online = ts && (Date.now() - ts.getTime()) < 90000;
+    return `<div class="mem-chip" onclick="flyToMember('${uid}')">
+      <div class="mem-dot" style="background:${d.hidden?'#ccc':(online?'#34a853':color)}"></div>
+      <div>
+        <div class="mem-name">${esc(name)}${d.hidden?' 🙈':''}</div>
+        ${ago?`<div class="mem-time">${ago}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function flyToMember(uid) {
+  const d = members[uid];
+  if (!d || !d.lat || !mapObj) return;
+  switchTab('map');
+  mapObj.flyTo([d.lat, d.lng], 16);
+  if (memberMarkers[uid]) memberMarkers[uid].openPopup();
+}
+
+function centerOnMe() {
+  if (myLat && mapObj) { mapObj.flyTo([myLat, myLng], 16); showToast('🎯','ok'); }
+}
+
+// ══════════════════════════════════════════════
+//  GEOFENCING
+// ══════════════════════════════════════════════
+function checkGeofencing(lat, lng) {
+  points.forEach(p => {
+    const dist = haversine(lat, lng, p.lat, p.lng);
+    if (dist <= p.radius && !arrivedSet.has(p.id)) {
+      arrivedSet.add(p.id);
+      sendArrivalNotif(p.name);
+    } else if (dist > p.radius * 1.5 && arrivedSet.has(p.id)) {
+      arrivedSet.delete(p.id);  // reset for next arrival
+    }
+  });
+}
+
+function sendArrivalNotif(name) {
+  const msg = `${t('arriveAt')}: ${name}`;
+  showToast('📍 '+msg,'ok');
+  if (Notification.permission === 'granted') {
+    new Notification('📍 Family Tracker', { body: msg, icon: 'icons/icon.svg' });
+  }
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2-lat1)*Math.PI/180;
+  const dLon = (lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ══════════════════════════════════════════════
+//  PRIVACY
+// ══════════════════════════════════════════════
+function togglePrivacy() {
+  isHidden = !isHidden;
+  const btn = document.getElementById('privBtn');
+  document.getElementById('privIco').textContent = isHidden ? '🙈' : '👁️';
+  document.getElementById('privLbl').textContent = isHidden ? t('privOff') : t('privOn');
+  btn.className = 'm-priv no-print' + (isHidden ? ' hid' : '');
+  if (myLat) pushLocation(myLat, myLng);
+  showToast(isHidden ? '🙈 '+t('privOff') : '👁️ '+t('privOn'), isHidden ? 'err' : 'ok');
+  // Remove/restore my marker
+  if (isHidden && myMarker) { mapObj?.removeLayer(myMarker); myMarker = null; }
+}
+
+// ══════════════════════════════════════════════
+//  GROUP CODE
+// ══════════════════════════════════════════════
+function showGroupCode() {
+  const code = groupData?.joinCode || '';
+  openModal(`
+    <div class="mttl">${t('codeTitle')}</div>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:14px">${t('codeSub')}</p>
+    <div class="code-box" onclick="copyCode('${code}')">${code}</div>
+    <p style="text-align:center;font-size:12px;color:var(--text2);margin-top:8px">👆 ${t('codeSub').split('·')[1]||''}</p>
+    <button class="btn btn-p mt16" onclick="copyCode('${code}')">${t('codeCopied').replace('!','')} 📋</button>
+    <button class="btn btn-s" style="margin-top:8px" onclick="closeModal()">${t('cancel')}</button>
+  `);
+}
+
+function copyCode(code) {
+  navigator.clipboard?.writeText(code).then(() => showToast(t('codeCopied'),'ok'));
+}
+
+async function leaveGroup() {
+  if (!confirm(t('confirmLeave'))) return;
+  try {
+    await db.collection('groups').doc(groupId).update({
+      members: se.firestore.FieldValue.arrayRemove(me.uid)
+    });
+    await db.collection('users').doc(me.uid).update({ groupId: se.firestore.FieldValue.delete() });
+    await db.collection('locations').doc(me.uid).delete();
+    stopTracking(); unsubAll();
+    groupId = null; groupData = null; members = {}; points = [];
+    mapInit = false;
+    if (myMarker && mapObj) { mapObj.removeLayer(myMarker); myMarker = null; }
+    Object.values(memberMarkers).forEach(m => mapObj?.removeLayer(m));
+    memberMarkers = {};
+    showView('vOnboard');
+    renderUI();
+  } catch(e) { showToast(e.message,'err'); }
+}
+
+// ══════════════════════════════════════════════
+//  SETTINGS
+// ══════════════════════════════════════════════
+function editProfile() {
+  openModal(`
+    <div class="mttl">${t('editProf')}</div>
+    <div class="fg"><label class="fl">${t('name')}</label>
+      <input class="fi" type="text" id="mNewName" value="${esc(myProfile?.name||'')}"></div>
+    <div class="row mt16">
+      <button class="btn btn-s flex1" onclick="closeModal()">${t('cancel')}</button>
+      <button class="btn btn-p flex1" onclick="saveProfile()">${t('updName')}</button>
+    </div>`);
+}
+
+async function saveProfile() {
+  const name = document.getElementById('mNewName')?.value.trim();
+  if (!name) return;
+  await db.collection('users').doc(me.uid).update({ name });
+  await db.collection('locations').doc(me.uid).update({ name }).catch(()=>{});
+  myProfile.name = name;
+  document.getElementById('sMyName').textContent = name;
+  if (myMarker && myLat) updateMyMarker(myLat, myLng, 20);
+  closeModal();
+  showToast('✅','ok');
+}
+
+function reqNotifPerm() {
+  Notification.requestPermission().then(p => {
+    document.getElementById('sNotifVal').textContent = p === 'granted' ? t('notifOn') : t('notifOff');
+    showToast(p === 'granted' ? '🔔 '+t('notifOn') : t('notifOff'), p==='granted'?'ok':'err');
+  });
+}
+
+function reqNotifPermQuiet() {
+  if (Notification.permission === 'default') {
+    setTimeout(() => Notification.requestPermission(), 5000);
+  }
+}
+
+// ══════════════════════════════════════════════
+//  TAB SWITCHING
+// ══════════════════════════════════════════════
+function switchTab(name) {
+  ['map','points','group','settings'].forEach(n => {
+    document.getElementById('tp-'+n).className = 'tp' + (n===name?' on':'');
+    document.getElementById('nb-'+n).className = 'nb' + (n===name?' on':'');
+  });
+  if (name === 'map' && mapObj) setTimeout(() => mapObj.invalidateSize(), 100);
+  if (name === 'group') renderGroupTab();
+  if (name === 'settings') renderSettings();
+}
+
+function renderSettings() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.getElementById('sThemeIco').textContent = isDark ? '☀️' : '🌙';
+  document.getElementById('sThemeVal').textContent = isDark ? t('dark') : t('light');
+  document.getElementById('sMyName').textContent = myProfile?.name || me?.email || '';
+  document.getElementById('sNotifVal').textContent =
+    Notification.permission === 'granted' ? t('notifOn') :
+    Notification.permission === 'denied'  ? t('notifOff') : t('notifAsk');
+  // Set lang selects
+  ['langSett','langAuth'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = lang;
+  });
+}
+
+// ══════════════════════════════════════════════
+//  THEME & LANGUAGE
+// ══════════════════════════════════════════════
+function toggleTheme() {
+  theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('theme', theme);
+  renderSettings();
+}
+
+function setLang(l) {
+  lang = l;
+  localStorage.setItem('lang', l);
+  const dir = l === 'he' ? 'rtl' : 'ltr';
+  document.documentElement.setAttribute('lang', l);
+  document.documentElement.setAttribute('dir', dir);
+  renderUI();
+}
+
+// ══════════════════════════════════════════════
+//  UI RENDER (text strings)
+// ══════════════════════════════════════════════
+function renderUI() {
+  const lang2 = lang;
+  // Loading
+  setText('lTitle','app_name'); setText('lSub','loading_sub');
+  // Auth
+  setText('tabLogin','login'); setText('tabReg','reg');
+  setText('lEmail','email'); setText('lPass','pass');
+  setText('lName','name'); setText('lEmail2','email'); setText('lPass2','pass');
+  setText('bLogin','btnLogin'); setText('bReg','btnReg'); setText('bGoogle','btnGoogle');
+  // Onboard
+  setText('obTitle','obTitle'); setText('obSub','obSub');
+  setText('obCreate','obCreate'); setText('obCreateS','obCreateS');
+  setText('obJoin','obJoin'); setText('obJoinS','obJoinS');
+  setText('lGrpName','grpName'); setText('bCreateGrp','btnCreate'); setText('bJoin','btnJoin');
+  const backs = ['bBackOB','bBackOB2','bObLogout'];
+  backs.forEach((id,i) => { const el = document.getElementById(id); if(el) el.textContent = i<2?t('btnBack'):t('btnLogout'); });
+  // Nav labels
+  setText('nlMap','navMap'); setText('nlPoints','navPts'); setText('nlGroup','navGrp'); setText('nlSettings','navSet');
+  // Points tab
+  setText('ptTitle','ptTitle');
+  // Group tab
+  setText('memsTitleEl','memsTitle'); setText('permTitleEl','permTitle'); setText('permDesc','permDesc');
+  // Settings tab
+  setText('sAccLbl','sAcc'); setText('sProf','sProf'); setText('sDispLbl','sDisp');
+  setText('sThemeTxt','sTheme'); setText('sLangTxt','sLang'); setText('sTrackLbl','sTrack');
+  setText('sNotif','sNotif'); setText('sCenter','sCenter');
+  setText('sGrpLbl','sGrp'); setText('sCode','sCode'); setText('sLeave','sLeave'); setText('sLogout','sLogout');
+  // Header
+  setText('hdrTitle','app_name');
+  // Privacy
+  document.getElementById('privLbl') && (document.getElementById('privLbl').textContent = isHidden ? t('privOff') : t('privOn'));
+  // Versions
+  ['verBadge','verFoot'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent=APP_VERSION; });
+  // Lang selects
+  ['langAuth','langSett'].forEach(id => { const e=document.getElementById(id); if(e) e.value=lang; });
+  renderSettings();
+  renderPoints();
+}
+
+const T_MAP = {
+  app_name:'app_name', loading_sub:'loading_sub', login:'login', reg:'reg', email:'email', pass:'pass',
+  name:'name', btnLogin:'btnLogin', btnReg:'btnReg', btnGoogle:'btnGoogle', btnLogout:'btnLogout',
+  obTitle:'obTitle', obSub:'obSub', obCreate:'obCreate', obCreateS:'obCreateS', obJoin:'obJoin', obJoinS:'obJoinS',
+  grpName:'grpName', btnCreate:'btnCreate', btnJoin:'btnJoin', navMap:'navMap', navPts:'navPts',
+  navGrp:'navGrp', navSet:'navSet', ptTitle:'ptTitle', memsTitle:'memsTitle', permTitle:'permTitle',
+  permDesc:'permDesc', sAcc:'sAcc', sProf:'sProf', sDisp:'sDisp', sTheme:'sTheme', sLang:'sLang',
+  sTrack:'sTrack', sNotif:'sNotif', sCenter:'sCenter', sGrp:'sGrp', sCode:'sCode', sLeave:'sLeave', sLogout:'sLogout'
+};
+function setText(id, key) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = t(key);
+}
+
+// ══════════════════════════════════════════════
+//  MODAL
+// ══════════════════════════════════════════════
+function openModal(html) {
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modal').hidden = false;
+}
+function closeModal() { document.getElementById('modal').hidden = true; }
+function closeModalOuter(e) { if (e.target === document.getElementById('modal')) closeModal(); }
+
+// ══════════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════════
+let toastTimer;
+function showToast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + type + ' show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.className = 'toast ' + type, 2800);
+}
+
+// ══════════════════════════════════════════════
+//  CONFETTI
+// ══════════════════════════════════════════════
+function confetti() {
+  const c = document.getElementById('confetti');
+  c.innerHTML = '';
+  const cols = ['#FF8C42','#FFB703','#3BB273','#E63946','#7C5CBF','#1a73e8'];
+  for (let i = 0; i < 70; i++) {
+    const p = document.createElement('div');
+    p.className = 'cf';
+    const sz = 5 + Math.random() * 8;
+    p.style.cssText = `left:${Math.random()*100}%;top:-${sz}px;background:${cols[i%cols.length]};
+      border-radius:${Math.random()>.5?'50%':'3px'};width:${sz}px;height:${sz}px;
+      animation-delay:${Math.random()*.6}s;animation-duration:${1.1+Math.random()*.7}s;`;
+    c.appendChild(p);
+  }
+  setTimeout(() => c.innerHTML = '', 2500);
+}
+
+// ══════════════════════════════════════════════
+//  UTILITIES
+// ══════════════════════════════════════════════
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function relativeTime(date) {
+  if (!date) return '';
+  const diff = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (diff < 60) return t('now');
+  const m = Math.floor(diff/60);
+  if (m < 60) return `${m} ${t('minsAgo')}`;
+  return date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+// ══════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  // Apply saved language
+  const savedLang = localStorage.getItem('lang') || 'he';
+  lang = savedLang;
+  document.documentElement.setAttribute('lang', savedLang);
+  document.documentElement.setAttribute('dir', savedLang==='he'?'rtl':'ltr');
+  renderUI();
+  initse();
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  }
+});
+</script>
+</body>
+</html>
