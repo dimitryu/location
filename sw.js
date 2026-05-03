@@ -1,7 +1,7 @@
 // ╔══════════════════════════════════════════╗
 // ║  Family Tracker — Service Worker v1.0.0  ║
 // ╚══════════════════════════════════════════╝
-const CACHE = 'family-tracker-v1.0.0';
+const CACHE = 'family-tracker-v1.0.4';
 const ASSETS = [
   './',
   './index.html',
