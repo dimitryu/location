@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1a73e8">
-<title>Family Tracker</title>
+<title>Family Location</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon.svg">
 <link rel="apple-touch-icon" href="icons/icon.svg">
@@ -19,17 +19,18 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.0.0";
+const APP_VERSION        = "1.0.1";
+const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
 // 🔥 REPLACE WITH YOUR FIREBASE CONFIG (Firebase Console → Project Settings)
 const firebaseConfig = {
-apiKey: "AIzaSyBi1RUxou3oFhsVVilN0CulCBSPobbZMao",
-authDomain: "location-56469.firebaseapp.com",
-projectId: "location-56469",
-storageBucket: "location-56469.firebasestorage.app",
-messagingSenderId: "892628974888",
-appId: "1:892628974888:web:c33b8b031f3272fce5e41d"
+  apiKey: "AIzaSyBi1RUxou3oFhsVVilN0CulCBSPobbZMao",
+  authDomain: "location-56469.firebaseapp.com",
+  projectId: "location-56469",
+  storageBucket: "location-56469.firebasestorage.app",
+  messagingSenderId: "892628974888",
+  appId: "1:892628974888:web:c33b8b031f3272fce5e41d"
 };
 </script>
 
@@ -371,7 +372,7 @@ select.lang-sel{
 <!-- ══════════ SPLASH ══════════ -->
 <div id="vLoading">
   <div class="ll">📍</div>
-  <div class="lt" id="lTitle">Family Tracker</div>
+  <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
   <div class="lsp"></div>
 </div>
@@ -379,7 +380,7 @@ select.lang-sel{
 <!-- ══════════ AUTH ══════════ -->
 <div id="vAuth" hidden>
   <div class="al">📍</div>
-  <div class="at">Family Tracker</div>
+  <div class="at">Family Location</div>
   <div class="as" id="aSubT">מעקב מיקום משפחתי חכם</div>
   <div class="acard">
     <div class="atabs">
@@ -561,7 +562,7 @@ select.lang-sel{
         </div>
 
         <div style="text-align:center;padding:16px 0;color:var(--text2);font-size:12px">
-          Family Tracker v<span id="verFoot">1.0.0</span> · dimitryu
+          Family Location v<span id="verFoot">1.0.1</span> · dimitryu
         </div>
       </div>
     </div>
@@ -650,6 +651,7 @@ function initials(name) {
 // ══════════════════════════════════════════════
 const TR = {
   he:{
+    app_name:'Family Location',loading_sub:'מעקב מיקום משפחתי',
     login:'כניסה',reg:'הרשמה',email:'אימייל',pass:'סיסמה',name:'שם מלא',
     btnLogin:'כניסה',btnReg:'הרשמה',btnGoogle:'🔑 כניסה עם Google',btnLogout:'יציאה',
     obTitle:'ברוכים הבאים!',obSub:'הצטרף לקבוצה משפחתית',
@@ -682,6 +684,7 @@ const TR = {
     noGps:'GPS לא זמין',
   },
   en:{
+    app_name:'Family Location',loading_sub:'Smart family location tracking',
     login:'Login',reg:'Register',email:'Email',pass:'Password',name:'Full name',
     btnLogin:'Login',btnReg:'Register',btnGoogle:'🔑 Sign in with Google',btnLogout:'Logout',
     obTitle:'Welcome!',obSub:'Join a family group',
@@ -714,6 +717,7 @@ const TR = {
     noGps:'GPS unavailable',
   },
   ru:{
+    app_name:'Family Location',loading_sub:'Семейный трекер местоположения',
     login:'Вход',reg:'Регистрация',email:'Эл. почта',pass:'Пароль',name:'Полное имя',
     btnLogin:'Войти',btnReg:'Зарегистрироваться',btnGoogle:'🔑 Войти через Google',btnLogout:'Выйти',
     obTitle:'Добро пожаловать!',obSub:'Присоединяйтесь к семейной группе',
@@ -752,36 +756,64 @@ const t = k => (TR[lang]||TR.en)[k] || (TR.en[k]) || k;
 //  FIREBASE INIT
 // ══════════════════════════════════════════════
 function initFirebase() {
-  firebase.initializeApp(FIREBASE_CONFIG);
-  auth = firebase.auth();
-  db   = firebase.firestore();
-  auth.onAuthStateChanged(onAuth);
+  try {
+    // Prevent double-init
+    if (!firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
+    auth = firebase.auth();
+    db   = firebase.firestore();
+
+    // Fallback: if onAuthStateChanged never fires within 8s, show auth screen
+    const splashTimeout = setTimeout(() => {
+      console.warn('Firebase timeout — showing auth');
+      hideSplash();
+      showView('vAuth');
+    }, 8000);
+
+    auth.onAuthStateChanged(user => {
+      clearTimeout(splashTimeout);
+      onAuth(user);
+    });
+  } catch(e) {
+    console.error('Firebase init error:', e);
+    hideSplash();
+    showView('vAuth');
+    showToast('Firebase error: ' + e.message, 'err');
+  }
 }
 
 async function onAuth(user) {
-  if (user) {
-    me = user;
-    // Load or create user profile
-    const ref = db.collection('users').doc(me.uid);
-    const snap = await ref.get();
-    if (!snap.exists) {
-      await ref.set({ name: me.displayName || me.email.split('@')[0], email: me.email, createdAt: new Date() });
-    }
-    myProfile = (await ref.get()).data();
-    // Check if user is in a group
-    const gSnap = await db.collection('users').doc(me.uid).get();
-    const gid = gSnap.data()?.groupId;
-    if (gid) {
-      groupId = gid;
-      await initApp();
+  try {
+    if (user) {
+      me = user;
+      // Load or create user profile
+      const ref = db.collection('users').doc(me.uid);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        await ref.set({ name: me.displayName || me.email.split('@')[0], email: me.email, createdAt: new Date() });
+      }
+      myProfile = (await ref.get()).data();
+      // Check if user is in a group
+      const gSnap = await db.collection('users').doc(me.uid).get();
+      const gid = gSnap.data()?.groupId;
+      if (gid) {
+        groupId = gid;
+        await initApp();
+      } else {
+        showView('vOnboard');
+        renderUI();
+      }
     } else {
-      showView('vOnboard');
+      me = null; myProfile = null; groupId = null;
+      showView('vAuth');
       renderUI();
     }
-  } else {
-    me = null; myProfile = null; groupId = null;
+  } catch(e) {
+    console.error('onAuth error:', e);
     showView('vAuth');
     renderUI();
+    showToast('Error: ' + e.message, 'err');
   }
   hideSplash();
 }
@@ -1028,7 +1060,7 @@ async function removeMember(uid) {
   await db.collection('groups').doc(groupId).update({
     members: firebase.firestore.FieldValue.arrayRemove(uid)
   });
-  await db.collection('users').doc(uid).update({ groupId: se.firestore.FieldValue.delete() });
+  await db.collection('users').doc(uid).update({ groupId: firebase.firestore.FieldValue.delete() });
 }
 
 // ══════════════════════════════════════════════
@@ -1199,7 +1231,7 @@ async function pushLocation(lat, lng) {
   try {
     await db.collection('locations').doc(me.uid).set({
       lat, lng, uid: me.uid, groupId, name: myProfile?.name || me.email,
-      hidden: isHidden, ts: se.firestore.FieldValue.serverTimestamp()
+      hidden: isHidden, ts: firebase.firestore.FieldValue.serverTimestamp()
     });
   } catch(e) { /* fail silently */ }
 }
@@ -1371,9 +1403,9 @@ async function leaveGroup() {
   if (!confirm(t('confirmLeave'))) return;
   try {
     await db.collection('groups').doc(groupId).update({
-      members: se.firestore.FieldValue.arrayRemove(me.uid)
+      members: firebase.firestore.FieldValue.arrayRemove(me.uid)
     });
-    await db.collection('users').doc(me.uid).update({ groupId: se.firestore.FieldValue.delete() });
+    await db.collection('users').doc(me.uid).update({ groupId: firebase.firestore.FieldValue.delete() });
     await db.collection('locations').doc(me.uid).delete();
     stopTracking(); unsubAll();
     groupId = null; groupData = null; members = {}; points = [];
@@ -1593,7 +1625,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.documentElement.setAttribute('lang', savedLang);
   document.documentElement.setAttribute('dir', savedLang==='he'?'rtl':'ltr');
   renderUI();
-  initse();
+  initFirebase();
   // Register service worker
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(()=>{});
