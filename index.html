@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.0.3";
+const APP_VERSION        = "2.0.4";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -1503,12 +1503,32 @@ function unsubAll() {
 //  GROUP
 // ══════════════════════════════════════════════
 async function loadGroup() {
-  if (!groupId) return;
+  if (!groupId) { showView('vOnboard'); renderUI(); return; }
   // Load ALL groups the user belongs to
   const allGroupIds = [...new Set([groupId, ...(myProfile?.groups || [])])];
   const grpSnaps = await Promise.all(allGroupIds.map(gid => db.collection('groups').doc(gid).get()));
   allGroupsData = {};
   grpSnaps.forEach(s => { if (s.exists) allGroupsData[s.id] = s.data(); });
+
+  // If ALL groups were deleted — clean up and go to onboarding
+  if (Object.keys(allGroupsData).length === 0) {
+    await db.collection('users').doc(me.uid).update({
+      groupId: firebase.firestore.FieldValue.delete(),
+      groups: firebase.firestore.FieldValue.delete()
+    }).catch(() => {});
+    groupId = null; groupData = null; myGroupsList = [];
+    stopTracking(); unsubAll();
+    showView('vOnboard');
+    renderUI();
+    return;
+  }
+
+  // If primary groupId was deleted but others exist — switch to first valid one
+  if (!allGroupsData[groupId]) {
+    groupId = Object.keys(allGroupsData)[0];
+    await db.collection('users').doc(me.uid).update({ groupId }).catch(() => {});
+  }
+
   groupData = allGroupsData[groupId] || null;
   myGroupsList = Object.entries(allGroupsData).map(([id, d]) => ({ id, name: d.name || id }));
   renderGroupTab();
