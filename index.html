@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.0.6";
+const APP_VERSION        = "2.0.7";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -474,7 +474,8 @@ select.lang-sel{
   width:20px;height:20px;display:flex;align-items:center;justify-content:center;
   box-shadow:0 1px 4px rgba(0,0,0,.3);
 }
-.mm{position:relative}
+.mm{position:relative;overflow:hidden}
+.mm-photo{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
 
 /* ════════════ SOS ════════════ */
 .sos-fab{
@@ -1095,7 +1096,7 @@ const TR = {
     light:'בהיר',dark:'כהה',
     arriveAt:'הגעת ל',adminArrival:'הגיע/ה ל',codeCopied:'הקוד הועתק!',
     codeTitle:'קוד ההצטרפות',codeSub:'שתף עם בני המשפחה · לחץ להעתקה',
-    editProf:'עריכת שם תצוגה',updName:'עדכן שם',
+    editProf:'עריכת שם תצוגה',updName:'עדכן שם',uploadPhoto:'העלאת תמונה',myPerms:'מי רואה אותי',
     errLogin:'שגיאה בכניסה',errReg:'שגיאה בהרשמה',errJoin:'קוד לא נמצא',
     errLoc:'לא ניתן לאחזר מיקום',
     okCreate:'הקבוצה נוצרה! 🎉',okJoin:'הצטרפת לקבוצה! 🎉',
@@ -1159,7 +1160,7 @@ const TR = {
     light:'Light',dark:'Dark',
     arriveAt:'Arrived at',codeCopied:'Code copied!',
     codeTitle:'Invite Code',codeSub:'Share with family · tap to copy',
-    editProf:'Edit display name',updName:'Update name',
+    editProf:'Edit display name',updName:'Update name',uploadPhoto:'Upload photo',myPerms:'Who sees me',
     errLogin:'Login failed',errReg:'Registration failed',errJoin:'Code not found',
     errLoc:'Could not get location',
     okCreate:'Group created! 🎉',okJoin:'Joined the group! 🎉',
@@ -1223,7 +1224,7 @@ const TR = {
     light:'Светлая',dark:'Тёмная',
     arriveAt:'Прибыл в',codeCopied:'Код скопирован!',
     codeTitle:'Код приглашения',codeSub:'Поделитесь с семьёй · нажмите для копирования',
-    editProf:'Изменить имя',updName:'Обновить имя',
+    editProf:'Изменить имя',updName:'Обновить имя',uploadPhoto:'Загрузить фото',myPerms:'Кто меня видит',
     errLogin:'Ошибка входа',errReg:'Ошибка регистрации',errJoin:'Код не найден',
     errLoc:'Не удалось получить местоположение',
     okCreate:'Группа создана! 🎉',okJoin:'Вы вступили в группу! 🎉',
@@ -1621,10 +1622,14 @@ function renderGroupTab() {
       const batt = isMe ? myBattery : m.battery;
       const battStr = (batt !== null && batt !== undefined) ? ` · 🔋${batt}%` : '';
       const delBtn  = (isAdm && !isMe) ? `<button class="small-btn del" onclick="removeMemberFrom('${gid}','${uid}')">✕</button>` : '';
-      const permBtn = isAdm ? `<button class="small-btn" onclick="openMemberPermissions('${uid}','${gid}')" title="הרשאות">🔒</button>` : '';
+      const permBtn = (isAdm || isMe) ? `<button class="small-btn" onclick="openMemberPermissions('${uid}','${gid}')" title="${isMe ? t('myPerms') : 'הרשאות'}">🔒</button>` : '';
+      const photo = isMe ? myProfile?.photoBase64 : m.photoBase64;
+      const avHtml = photo
+        ? `<img src="${photo}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0">`
+        : `<div class="mav" style="background:${color}">${initials(name)}</div>`;
       memsHtml += `
         <div class="mc">
-          <div class="mav" style="background:${color}">${initials(name)}</div>
+          ${avHtml}
           <div style="flex:1">
             <div class="mn">${esc(name)} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''} ${isAdmMem?'<span class="badge bdg-a">'+t('admin')+'</span>':''}</div>
             <div class="ms">${lastSeen ? t('lastSeen')+': '+lastSeen : ''}${battStr}</div>
@@ -1725,35 +1730,45 @@ function renderPermissions() {
   if (!el.innerHTML) el.innerHTML = '<div class="cis" style="text-align:center;padding:12px">' + (groupData.members?.length>1 ? t('permDesc') : '–') + '</div>';
 }
 
-async function togglePerm(targetUid, allow) {
-  const perms = groupData?.permissions || {};
-  // If no list yet, initialise with all OTHER members (default-all-allowed state)
-  const allOthers = (groupData.members || []).filter(u => u !== me.uid);
+async function togglePerm(targetUid, allow, gid) {
+  const tGid = gid || groupId;
+  const tGd = allGroupsData[tGid] || groupData || {};
+  const perms = tGd.permissions || {};
+  const allOthers = (tGd.members || []).filter(u => u !== me.uid);
   const myList = perms[me.uid] ? [...perms[me.uid]] : [...allOthers];
   if (allow) { if (!myList.includes(targetUid)) myList.push(targetUid); }
   else { const i = myList.indexOf(targetUid); if (i > -1) myList.splice(i,1); }
-  await db.collection('groups').doc(groupId).update({
+  await db.collection('groups').doc(tGid).update({
     [`permissions.${me.uid}`]: myList
   });
 }
 
-// Admin opens a modal to manage who can see a specific member
+// Opens permissions modal — any user for themselves, admin for anyone
 function openMemberPermissions(targetUid, gid) {
   const tGid = gid || groupId;
   const tGd = allGroupsData[tGid] || groupData || {};
-  if (tGd.adminUid !== me.uid) return;
+  const isSelf = targetUid === me?.uid;
+  if (!isSelf && tGd.adminUid !== me?.uid) return;
   const perms = tGd.permissions || {};
   const rawPerms = perms[targetUid];
-  const targetName = members[targetUid]?.name || targetUid.slice(0,8);
+  const targetName = (targetUid === me?.uid ? myProfile?.name : null) || members[targetUid]?.name || targetUid.slice(0,8);
   const others = (tGd.members || []).filter(u => u !== targetUid);
   const rows = others.map(uid => {
-    const name = members[uid]?.name || uid.slice(0,8);
+    const m = members[uid] || {};
+    const name = (uid === me?.uid ? myProfile?.name : null) || m.name || uid.slice(0,8);
+    const photo = uid === me?.uid ? myProfile?.photoBase64 : m.photoBase64;
+    const avHtml = photo
+      ? `<img src="${photo}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0">`
+      : `<div style="width:36px;height:36px;border-radius:50%;background:${colorForUid(uid)};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0">${initials(name)}</div>`;
     const checked = !rawPerms || rawPerms.length === 0 || rawPerms.includes(uid);
+    const onchange = isSelf
+      ? `onchange="togglePerm('${uid}',this.checked,'${tGid}')"`
+      : `onchange="togglePermAdmin('${targetUid}','${uid}',this.checked,'${tGid}')"`;
     return `<div class="perm-row">
-      <div style="width:36px;height:36px;border-radius:50%;background:${colorForUid(uid)};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0">${initials(name)}</div>
+      ${avHtml}
       <span class="perm-name">${esc(name)}</span>
       <label class="sw">
-        <input type="checkbox" ${checked?'checked':''} onchange="togglePermAdmin('${targetUid}','${uid}',this.checked,'${tGid}')">
+        <input type="checkbox" ${checked?'checked':''} ${onchange}>
         <span class="sw-sl"></span>
       </label>
     </div>`;
@@ -1941,14 +1956,19 @@ async function deletePoint(id) {
 }
 
 function subPoints() {
-  if (!groupId) return;
-  if (unsubPts) unsubPts();
-  unsubPts = db.collection('groups').doc(groupId).collection('points')
-    .onSnapshot(snap => {
-      points = snap.docs.map(d => ({id:d.id,...d.data()}));
+  if (unsubPts) { unsubPts(); unsubPts = null; }
+  points = [];
+  const gids = Object.keys(allGroupsData).length > 0 ? Object.keys(allGroupsData) : (groupId ? [groupId] : []);
+  if (!gids.length) return;
+  const unsubs = gids.map(gid =>
+    db.collection('groups').doc(gid).collection('points').onSnapshot(snap => {
+      points = points.filter(p => p._gid !== gid);
+      points.push(...snap.docs.map(d => ({ id: d.id, _gid: gid, ...d.data() })));
       renderPoints();
       syncPointMarkers();
-    });
+    })
+  );
+  unsubPts = () => unsubs.forEach(fn => fn());
 }
 
 function renderPoints() {
@@ -2107,6 +2127,7 @@ async function pushLocation(lat, lng, motion) {
     hidden: isHidden, quiet: isQuiet, motion: motion || null,
     status: myStatus || null,
     battery: getBatteryPct(),
+    photoBase64: myProfile?.photoBase64 || null,
     ts: firebase.firestore.FieldValue.serverTimestamp()
   };
   try {
@@ -2205,9 +2226,13 @@ function updateMemberMarker(uid, data) {
   const statusEmoji = statusOpt ? statusOpt.emoji : '';
   const statusBadge = statusEmoji ? `<div class="status-badge">${statusEmoji}</div>` : '';
   const motionBadge = motionEmoji ? `<div class="mm-motion">${motionEmoji}</div>` : '';
+  const photo = data.photoBase64;
+  const memberInner = photo
+    ? `<img class="mm-photo" src="${photo}">${motionBadge}${statusBadge}`
+    : `${initials(name)}${motionBadge}${statusBadge}`;
   const icon = L.divIcon({
     className:'', iconSize:[44,44], iconAnchor:[22,22],
-    html:`<div class="mm${movingClass}" style="background:${color}">${initials(name)}${motionBadge}${statusBadge}</div>`
+    html:`<div class="mm${movingClass}" style="background:${color}">${memberInner}</div>`
   });
   const ts = data.ts?.toDate ? data.ts.toDate() : null;
   const MOTION_TR = {still:'motionStill',walking:'motionWalk',cycling:'motionCycle',driving:'motionDrive'};
@@ -2494,8 +2519,19 @@ async function switchGroup(newGid) {
 }
 // ══════════════════════════════════════════════
 function editProfile() {
+  const curPhoto = myProfile?.photoBase64;
+  const previewHtml = curPhoto
+    ? `<img id="photoPreview" src="${curPhoto}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 10px">`
+    : `<div id="photoPreview" style="width:72px;height:72px;border-radius:50%;background:${colorForUid(me?.uid||'')};display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:900;color:#fff;margin:0 auto 10px">${initials(myProfile?.name||'?')}</div>`;
   openModal(`
     <div class="mttl">${t('editProf')}</div>
+    ${previewHtml}
+    <div style="text-align:center;margin-bottom:14px">
+      <label style="cursor:pointer;color:var(--primary);font-size:13px;font-weight:700">
+        📷 ${t('uploadPhoto')}
+        <input type="file" accept="image/*" id="photoFile" style="display:none" onchange="previewProfilePhoto(this)">
+      </label>
+    </div>
     <div class="fg"><label class="fl">${t('name')}</label>
       <input class="fi" type="text" id="mNewName" value="${esc(myProfile?.name||'')}"></div>
     <div class="row mt16">
@@ -2504,12 +2540,47 @@ function editProfile() {
     </div>`);
 }
 
+function previewProfilePhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 80;
+      const ctx = canvas.getContext('2d');
+      const size = Math.min(img.width, img.height);
+      const sx = (img.width - size) / 2, sy = (img.height - size) / 2;
+      ctx.drawImage(img, sx, sy, size, size, 0, 0, 80, 80);
+      const base64 = canvas.toDataURL('image/jpeg', 0.6);
+      const preview = document.getElementById('photoPreview');
+      if (preview) {
+        const newImg = document.createElement('img');
+        newImg.src = base64;
+        newImg.style.cssText = 'width:72px;height:72px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 10px';
+        newImg.id = 'photoPreview';
+        preview.replaceWith(newImg);
+      }
+      input.dataset.base64 = base64;
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
 async function saveProfile() {
   const name = document.getElementById('mNewName')?.value.trim();
   if (!name) return;
-  await db.collection('users').doc(me.uid).update({ name });
-  await db.collection('locations').doc(me.uid).update({ name }).catch(()=>{});
+  const photoInput = document.getElementById('photoFile');
+  const photoBase64 = photoInput?.dataset?.base64 || null;
+  const userUpdate = { name };
+  const locUpdate = { name };
+  if (photoBase64) { userUpdate.photoBase64 = photoBase64; locUpdate.photoBase64 = photoBase64; }
+  await db.collection('users').doc(me.uid).update(userUpdate);
+  await db.collection('locations').doc(me.uid).set(locUpdate, { merge: true }).catch(()=>{});
   myProfile.name = name;
+  if (photoBase64) myProfile.photoBase64 = photoBase64;
   document.getElementById('sMyName').textContent = name;
   if (myMarker && myLat) updateMyMarker(myLat, myLng, 20);
   closeModal();
@@ -3322,8 +3393,12 @@ function buildMemberSelDrop() {
     arr.map(([uid,d]) => {
       const color = colorForUid(uid);
       const name = d.name || uid.slice(0,6);
+      const photo = d.photoBase64;
+      const dotHtml = photo
+        ? `<img src="${photo}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0">`
+        : `<div class="m-sel-dot" style="background:${color}"></div>`;
       return `<div class="m-sel-item" onclick="selectMember('${uid}')">
-        <div class="m-sel-dot" style="background:${color}"></div>
+        ${dotHtml}
         <span>${esc(name)}</span>
       </div>`;
     }).join('');
@@ -3391,9 +3466,13 @@ function updateMyMarker(lat, lng, accuracy) {
   const color = colorForUid(me.uid);
   const motionBadge = currentMotion && MOTION_EMOJI[currentMotion]
     ? `<div class="mm-motion">${MOTION_EMOJI[currentMotion]}</div>` : '';
+  const photo = myProfile?.photoBase64;
+  const innerHtml = photo
+    ? `<img class="mm-photo" src="${photo}">${motionBadge}`
+    : `${initials(name)}${motionBadge}`;
   const icon = L.divIcon({
     className:'', iconSize:[44,44], iconAnchor:[22,22],
-    html:`<div class="mm" style="background:${color}">${initials(name)}${motionBadge}</div>`
+    html:`<div class="mm" style="background:${color}">${innerHtml}</div>`
   });
   const battPct = getBatteryPct();
   const battStr = battPct !== null ? ` · 🔋${battPct}%` : '';
