@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.0.2";
+const APP_VERSION        = "2.0.3";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -1027,6 +1027,8 @@ let unreadChat    = 0;
 let myBattery     = null;
 let lastSpeedAlert = 0;
 let metricsRefreshInterval = null;
+let allGroupsData = {};    // gid → groupDoc data (all groups user belongs to)
+let locationUnsubs = [];   // per-UID location listeners
 let lastBatteryAlertPct = 100;
 let sosTapCount = 0;
 let sosTapTimer = null;
@@ -1479,6 +1481,9 @@ async function initApp() {
   reqNotifPermQuiet();
   renderPrivacyBtn();
   setTimeout(checkForUpdate, 4000);
+  // Seed history so first Android back press goes to map, not exit
+  history.replaceState({ tab: 'map' }, '');
+  _currentTab = 'map';
 }
 
 function unsubAll() {
@@ -1489,6 +1494,7 @@ function unsubAll() {
   if (unsubChat) { unsubChat(); unsubChat = null; }
   if (unsubSOS)    { unsubSOS();    unsubSOS    = null; }
   if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
+  locationUnsubs.forEach(fn => fn()); locationUnsubs = [];
   activeSosBanners = {};
   updateSOSBanner();
 }
@@ -1498,108 +1504,152 @@ function unsubAll() {
 // ══════════════════════════════════════════════
 async function loadGroup() {
   if (!groupId) return;
-  const snap = await db.collection('groups').doc(groupId).get();
-  groupData = snap.data();
-  // Load all groups this user belongs to (for switcher)
-  const allGroupIds = myProfile?.groups || [groupId];
-  if (allGroupIds.length > 1) {
-    const grpSnaps = await Promise.all(
-      allGroupIds.map(gid => db.collection('groups').doc(gid).get())
-    );
-    myGroupsList = grpSnaps.map(s => ({ id: s.id, name: s.exists ? (s.data().name || s.id) : s.id }));
-  } else {
-    myGroupsList = [{ id: groupId, name: groupData?.name || groupId }];
-  }
+  // Load ALL groups the user belongs to
+  const allGroupIds = [...new Set([groupId, ...(myProfile?.groups || [])])];
+  const grpSnaps = await Promise.all(allGroupIds.map(gid => db.collection('groups').doc(gid).get()));
+  allGroupsData = {};
+  grpSnaps.forEach(s => { if (s.exists) allGroupsData[s.id] = s.data(); });
+  groupData = allGroupsData[groupId] || null;
+  myGroupsList = Object.entries(allGroupsData).map(([id, d]) => ({ id, name: d.name || id }));
   renderGroupTab();
-  // Subscribe to live group updates (permissions)
+  // Subscribe to live updates for ALL groups
   if (unsubGrp) unsubGrp();
-  unsubGrp = db.collection('groups').doc(groupId).onSnapshot(s => {
-    groupData = s.data();
-    if (groupData?.name) localStorage.setItem('fl_grp_name', groupData.name);
-    // Update group name in nav button
-    const gnlEl = document.getElementById('nlGroup');
-    if (gnlEl) gnlEl.textContent = groupData?.name || t('navGrp');
-    // Update member selector button with group name
-    const selEl = document.getElementById('selName');
-    if (selEl && !focusedMember) selEl.textContent = groupData?.name || '';
-    renderGroupTab();
-  });
+  const unsubFns = allGroupIds.map(gid =>
+    db.collection('groups').doc(gid).onSnapshot(s => {
+      if (s.exists) {
+        allGroupsData[s.id] = s.data();
+        if (s.id === groupId) {
+          groupData = s.data();
+          if (groupData?.name) localStorage.setItem('fl_grp_name', groupData.name);
+          const gnlEl = document.getElementById('nlGroup');
+          if (gnlEl) gnlEl.textContent = groupData?.name || t('navGrp');
+          const selEl = document.getElementById('selName');
+          if (selEl && !focusedMember) selEl.textContent = groupData?.name || '';
+        }
+        myGroupsList = Object.entries(allGroupsData).map(([id, d]) => ({ id, name: d.name || id }));
+      }
+      renderGroupTab();
+      // Re-subscribe locations when member list changes (new member added)
+      subLocations();
+    })
+  );
+  unsubGrp = () => unsubFns.forEach(fn => fn());
+}
+
+let groupTabCollapsed = {}; // gid → boolean
+
+function toggleGroupSection(gid) {
+  groupTabCollapsed[gid] = !groupTabCollapsed[gid];
+  renderGroupTab();
 }
 
 function renderGroupTab() {
   if (!groupData) return;
-  const isAdmin = groupData.adminUid === me.uid;
-  // Check how many groups user belongs to (for switcher)
-  const myGroups = myProfile?.groups || [groupId];
-  const multiGroup = myGroups.length > 1;
 
-  // Build "my groups" section
-  let myGroupsHtml = '';
-  if (myGroupsList.length > 1) {
-    const rows = myGroupsList.map(g => {
-      const isActive = g.id === groupId;
-      return `<div class="mc" style="${isActive?'background:var(--primary);color:#fff;border-radius:10px':''}">
-        <span style="flex:1;font-weight:700;font-size:14px;padding:4px 0">${esc(g.name)}</span>
-        ${isActive
-          ? `<span class="badge bdg-p" style="background:#fff;color:var(--primary)">${t('me')}</span>`
-          : `<button class="small-btn" onclick="switchToGroup('${g.id}')">${t('switchGrp')}</button>`}
-      </div>`;
-    }).join('');
-    myGroupsHtml = `
-      <div class="sec-h" style="margin-top:16px">${t('myGroups')}</div>
-      ${rows}
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="small-btn" style="flex:1" onclick="showAddGroupModal('create')">➕ ${t('createNewGrp')}</button>
-        <button class="small-btn" style="flex:1" onclick="showAddGroupModal('join')">🔗 ${t('joinNewGrp')}</button>
-      </div>`;
-  } else {
-    myGroupsHtml = `<div style="display:flex;gap:8px;margin-top:10px">
-      <button class="small-btn" style="flex:1" onclick="showAddGroupModal('create')">➕ ${t('createNewGrp')}</button>
-      <button class="small-btn" style="flex:1" onclick="showAddGroupModal('join')">🔗 ${t('joinNewGrp')}</button>
-    </div>`;
-  }
+  // ── Build one section per group ──
+  let sectionsHtml = '';
+  const groups = Object.entries(allGroupsData).length > 0 ? Object.entries(allGroupsData) : [[groupId, groupData]];
+  groups.forEach(([gid, gd]) => {
+    if (!gd) return;
+    const isPrimary = gid === groupId;
+    const isAdm = gd.adminUid === me.uid;
+    const collapsed = !!groupTabCollapsed[gid];
+    const memberCount = gd.members?.length || 1;
 
-  document.getElementById('grpInfoCard').innerHTML = `
-    <div class="card">
-      <div class="ci" style="cursor:default">
-        <span class="cii">👨‍👩‍👧‍👦</span>
-        <div class="cib">
-          <div class="cit">${esc(groupData.name)}</div>
-          <div class="cis">${groupData.members?.length||1} ${t('memsTitle').toLowerCase()} · ${isAdmin?'<span class="badge bdg-a">'+t('admin')+'</span>':''}</div>
-        </div>
-        <div style="display:flex;gap:6px">
-          ${isAdmin ? `<button class="small-btn" onclick="openRenameGroup()" title="${t('renameGroup')}">✏️</button>` : ''}
-          <button class="small-btn" onclick="openNotifHistory()">🔔</button>
-          <button class="small-btn" onclick="showGroupCode()">#${esc(groupData.joinCode||'')}</button>
-        </div>
-      </div>
-    </div>
-    ${myGroupsHtml}`;
+    // Section header
+    const hdrBtns = `
+      ${isAdm ? `<button class="small-btn" onclick="openRenameGroupFor('${gid}')" title="${t('renameGroup')}">✏️</button>` : ''}
+      <button class="small-btn" onclick="openNotifHistory()">🔔</button>
+      <button class="small-btn" onclick="showGroupCodeFor('${gid}','${esc(gd.joinCode||'')}')">#${esc(gd.joinCode||'')}</button>`;
 
-  const memsEl = document.getElementById('grpMembers');
-  memsEl.innerHTML = '';
-  (groupData.members || [me.uid]).forEach(uid => {
-    const m = members[uid] || {};
-    const name = m.name || uid.slice(0,8);
-    const color = colorForUid(uid);
-    const isMe = uid === me.uid;
-    const isAdm = uid === groupData.adminUid;
-    const lastSeen = m.ts ? relativeTime(m.ts.toDate ? m.ts.toDate() : new Date(m.ts)) : '';
-    // Only admin sees delete button, and can't delete themselves
-    const delBtn  = (isAdmin && !isMe) ? `<button class="small-btn del" onclick="removeMember('${uid}')">✕</button>` : '';
-    const permBtn = isAdmin ? `<button class="small-btn" onclick="openMemberPermissions('${uid}')" title="הרשאות">🔒</button>` : '';
-    memsEl.innerHTML += `
-      <div class="mc">
-        <div class="mav" style="background:${color}">${initials(name)}</div>
-        <div style="flex:1">
-          <div class="mn">${esc(name)} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''} ${isAdm?'<span class="badge bdg-a">'+t('admin')+'</span>':''}</div>
-          <div class="ms">${lastSeen ? t('lastSeen')+': '+lastSeen : ''}</div>
+    // Members list
+    let memsHtml = '';
+    (gd.members || [me.uid]).forEach(uid => {
+      const m = members[uid] || {};
+      const name = m.name || uid.slice(0,8);
+      const color = colorForUid(uid);
+      const isMe = uid === me.uid;
+      const isAdmMem = uid === gd.adminUid;
+      const lastSeen = m.ts ? relativeTime(m.ts.toDate ? m.ts.toDate() : new Date(m.ts)) : '';
+      const delBtn  = (isAdm && !isMe) ? `<button class="small-btn del" onclick="removeMemberFrom('${gid}','${uid}')">✕</button>` : '';
+      const permBtn = isAdm ? `<button class="small-btn" onclick="openMemberPermissions('${uid}','${gid}')" title="הרשאות">🔒</button>` : '';
+      memsHtml += `
+        <div class="mc">
+          <div class="mav" style="background:${color}">${initials(name)}</div>
+          <div style="flex:1">
+            <div class="mn">${esc(name)} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''} ${isAdmMem?'<span class="badge bdg-a">'+t('admin')+'</span>':''}</div>
+            <div class="ms">${lastSeen ? t('lastSeen')+': '+lastSeen : ''}</div>
+          </div>
+          <div style="display:flex;gap:4px">${permBtn}${delBtn}</div>
+        </div>`;
+    });
+
+    // Permissions (only for sections where I'm admin)
+    let permsHtml = '';
+    if (isAdm) {
+      const perms = gd.permissions || {};
+      const rawPerms = perms[me.uid];
+      (gd.members || []).filter(uid => uid !== me.uid).forEach(uid => {
+        const m = members[uid] || {};
+        const name = m.name || uid.slice(0,8);
+        const checked = !rawPerms || rawPerms.length === 0 || rawPerms.includes(uid);
+        permsHtml += `
+          <div class="perm-row">
+            <div style="width:32px;height:32px;border-radius:50%;background:${colorForUid(uid)};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;flex-shrink:0">${initials(name)}</div>
+            <span class="perm-name">${esc(name)}</span>
+            <label class="sw">
+              <input type="checkbox" ${checked?'checked':''} onchange="togglePermFor('${gid}','${uid}',this.checked)">
+              <span class="sw-sl"></span>
+            </label>
+          </div>`;
+      });
+    }
+
+    sectionsHtml += `
+      <div style="margin-bottom:12px">
+        <div class="grp-section-hdr${collapsed?' collapsed':''}" onclick="toggleGroupSection('${gid}')">
+          <span style="flex:1">👥 ${esc(gd.name||gid)} <span style="font-size:11px;opacity:.7">(${memberCount})</span>${isPrimary?` <span class="badge bdg-p" style="font-size:10px">${t('me')}</span>`:''}</span>
+          ${hdrBtns}
+          <span class="arr" style="margin-right:4px">▲</span>
         </div>
-        <div style="display:flex;gap:4px">${permBtn}${delBtn}</div>
+        ${collapsed ? '' : `
+          <div class="grp-section-body">
+            ${memsHtml}
+            ${permsHtml ? `<div class="sec-h" style="margin-top:8px;font-size:12px">${t('permTitle')}</div>
+              <div class="os" style="margin-bottom:8px;font-size:12px;color:var(--text2)">${t('permDesc')}</div>
+              ${permsHtml}` : ''}
+          </div>`}
       </div>`;
   });
 
-  renderPermissions();
+  document.getElementById('grpInfoCard').innerHTML = sectionsHtml + `
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="small-btn" style="flex:1" onclick="showAddGroupModal('create')">➕ ${t('createNewGrp')}</button>
+      <button class="small-btn" style="flex:1" onclick="showAddGroupModal('join')">🔗 ${t('joinNewGrp')}</button>
+    </div>`;
+
+  document.getElementById('grpMembers').innerHTML = '';
+  document.getElementById('permsList').innerHTML = '';
+  document.getElementById('memsTitleEl').textContent = '';
+  document.getElementById('permTitleEl').textContent = '';
+  document.getElementById('permDesc').textContent = '';
+}
+
+function openRenameGroupFor(gid) { groupId = gid; groupData = allGroupsData[gid]; openRenameGroup(); }
+function showGroupCodeFor(gid, code) { const prev = groupId; groupId = gid; groupData = allGroupsData[gid]; showGroupCode(); groupId = prev; groupData = allGroupsData[prev]; }
+async function removeMemberFrom(gid, uid) {
+  if (!confirm(t('confirmLeave'))) return;
+  await db.collection('groups').doc(gid).update({ members: firebase.firestore.FieldValue.arrayRemove(uid) });
+  await db.collection('users').doc(uid).update({ groupId: firebase.firestore.FieldValue.delete() }).catch(()=>{});
+}
+async function togglePermFor(gid, targetUid, allow) {
+  const gd = allGroupsData[gid] || {};
+  const perms = gd.permissions || {};
+  const allOthers = (gd.members || []).filter(u => u !== me.uid);
+  const myList = perms[me.uid] ? [...perms[me.uid]] : [...allOthers];
+  if (allow) { if (!myList.includes(targetUid)) myList.push(targetUid); }
+  else { const i = myList.indexOf(targetUid); if (i > -1) myList.splice(i,1); }
+  await db.collection('groups').doc(gid).update({ [`permissions.${me.uid}`]: myList });
 }
 
 function renderPermissions() {
@@ -1639,12 +1689,14 @@ async function togglePerm(targetUid, allow) {
 }
 
 // Admin opens a modal to manage who can see a specific member
-function openMemberPermissions(targetUid) {
-  if (groupData?.adminUid !== me.uid) return;
-  const perms = groupData.permissions || {};
+function openMemberPermissions(targetUid, gid) {
+  const tGid = gid || groupId;
+  const tGd = allGroupsData[tGid] || groupData || {};
+  if (tGd.adminUid !== me.uid) return;
+  const perms = tGd.permissions || {};
   const rawPerms = perms[targetUid];
   const targetName = members[targetUid]?.name || targetUid.slice(0,8);
-  const others = (groupData.members || []).filter(u => u !== targetUid);
+  const others = (tGd.members || []).filter(u => u !== targetUid);
   const rows = others.map(uid => {
     const name = members[uid]?.name || uid.slice(0,8);
     const checked = !rawPerms || rawPerms.length === 0 || rawPerms.includes(uid);
@@ -1652,7 +1704,7 @@ function openMemberPermissions(targetUid) {
       <div style="width:36px;height:36px;border-radius:50%;background:${colorForUid(uid)};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0">${initials(name)}</div>
       <span class="perm-name">${esc(name)}</span>
       <label class="sw">
-        <input type="checkbox" ${checked?'checked':''} onchange="togglePermAdmin('${targetUid}','${uid}',this.checked)">
+        <input type="checkbox" ${checked?'checked':''} onchange="togglePermAdmin('${targetUid}','${uid}',this.checked,'${tGid}')">
         <span class="sw-sl"></span>
       </label>
     </div>`;
@@ -1665,15 +1717,15 @@ function openMemberPermissions(targetUid) {
   `);
 }
 
-async function togglePermAdmin(targetUid, viewerUid, allow) {
-  const perms = groupData?.permissions || {};
-  const allOthers = (groupData.members || []).filter(u => u !== targetUid);
+async function togglePermAdmin(targetUid, viewerUid, allow, gid) {
+  const tGid = gid || groupId;
+  const tGd = allGroupsData[tGid] || groupData || {};
+  const perms = tGd.permissions || {};
+  const allOthers = (tGd.members || []).filter(u => u !== targetUid);
   const list = perms[targetUid] ? [...perms[targetUid]] : [...allOthers];
   if (allow) { if (!list.includes(viewerUid)) list.push(viewerUid); }
   else { const i = list.indexOf(viewerUid); if (i > -1) list.splice(i,1); }
-  await db.collection('groups').doc(groupId).update({
-    [`permissions.${targetUid}`]: list
-  });
+  await db.collection('groups').doc(tGid).update({ [`permissions.${targetUid}`]: list });
 }
 
 async function switchToGroup(gid) {
@@ -2016,26 +2068,42 @@ async function pushLocation(lat, lng, motion) {
 }
 
 function subLocations() {
-  if (!groupId) return;
-  if (unsubLocs) unsubLocs();
-  unsubLocs = db.collection('locations')
-    .where('groupId','==',groupId)
-    .onSnapshot(snap => {
-      snap.docs.forEach(d => {
-        const data = d.data();
-        members[d.id] = data;
-        if (d.id !== me.uid) updateMemberMarker(d.id, data);
-      });
+  // Unsub all previous per-UID listeners
+  locationUnsubs.forEach(fn => fn());
+  locationUnsubs = [];
+
+  // Collect every member UID from every group the user belongs to
+  const allUids = new Set();
+  Object.values(allGroupsData).forEach(gd => {
+    (gd.members || []).forEach(uid => allUids.add(uid));
+  });
+  allUids.delete(me.uid); // own location handled by pushLocation/myMarker
+
+  allUids.forEach(uid => {
+    const unsub = db.collection('locations').doc(uid).onSnapshot(doc => {
+      if (!doc.exists) {
+        delete members[uid];
+        if (memberMarkers[uid] && mapObj) { mapObj.removeLayer(memberMarkers[uid]); delete memberMarkers[uid]; }
+        updateMembersOverlay();
+        return;
+      }
+      const data = doc.data();
+      members[uid] = data;
+      updateMemberMarker(uid, data);
       updateMembersOverlay();
-      renderGroupTab();
     });
+    locationUnsubs.push(unsub);
+  });
+
+  unsubLocs = () => { locationUnsubs.forEach(fn => fn()); locationUnsubs = []; };
 }
 
 function updateMemberMarker(uid, data) {
   if (!mapObj) return;
 
-  // Permission check
-  const perms = groupData?.permissions || {};
+  // Permission check — use whichever group data this member belongs to
+  const memberGd = Object.values(allGroupsData).find(gd => (gd.members||[]).includes(uid)) || groupData || {};
+  const perms = memberGd.permissions || {};
   const whoCanSeeUid = perms[uid];
   const canSee = !whoCanSeeUid || whoCanSeeUid.length === 0 || whoCanSeeUid.includes(me.uid);
 
@@ -2381,8 +2449,11 @@ function reqNotifPermQuiet() {
 }
 
 // ══════════════════════════════════════════════
-//  TAB SWITCHING
+//  TAB SWITCHING + BACK BUTTON
 // ══════════════════════════════════════════════
+let _currentTab = 'map';
+let _tabNavPush = true; // false when navigating via popstate
+
 function switchTab(name) {
   closeToast();
   if (name !== 'map' && routeLayer && mapObj) {
@@ -2408,13 +2479,36 @@ function switchTab(name) {
   if (name === 'metrics') {
     loadMetrics();
     if (!metricsRefreshInterval) {
-      metricsRefreshInterval = setInterval(loadLocationLog, 120000); // refresh log every 2 min
+      metricsRefreshInterval = setInterval(loadLocationLog, 120000);
     }
   } else {
     if (metricsRefreshInterval) { clearInterval(metricsRefreshInterval); metricsRefreshInterval = null; }
   }
   if (name === 'settings') renderSettings();
+
+  // Push history state for Android back button (skip if called from popstate handler)
+  if (_tabNavPush && name !== _currentTab) {
+    history.pushState({ tab: name }, '');
+  }
+  _currentTab = name;
 }
+
+// Android back button: go to previous tab, not exit app
+window.addEventListener('popstate', e => {
+  const modal = document.getElementById('modal');
+  if (modal && !modal.hidden) { closeModal(); return; }
+  if (e.state?.tab) {
+    _tabNavPush = false;
+    switchTab(e.state.tab);
+    _tabNavPush = true;
+  } else if (_currentTab !== 'map') {
+    _tabNavPush = false;
+    switchTab('map');
+    _tabNavPush = true;
+    history.pushState({ tab: 'map' }, '');
+  }
+  // If already on map — let browser handle (shows exit prompt on Android)
+});
 
 function renderSettings() {
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -3184,7 +3278,7 @@ async function checkForUpdate() {
   try {
     const resp = await fetch(
       'https://raw.githubusercontent.com/dimitryu/location/main/index.html',
-      { cache: 'no-cache', signal: AbortSignal.timeout(8000) }
+      { cache: 'no-cache', signal: AbortSignal.timeout(10000) }
     );
     if (!resp.ok) return;
     const html = await resp.text();
@@ -3192,12 +3286,16 @@ async function checkForUpdate() {
     if (!m) return;
     const latest = m[1];
     if (latest === APP_VERSION) return;
-    // Newer version found — update SW cache then reload
-    showToast(`🆕 גרסה ${latest} — מעדכן...`, 'ok', 6000);
-    const reg = await navigator.serviceWorker?.getRegistration();
-    if (reg) await reg.update().catch(() => {});
-    setTimeout(() => location.reload(true), 3500);
-  } catch(e) { /* network error or timeout — skip silently */ }
+    // Newer version — purge ALL SW caches then hard-reload
+    showToast(`🆕 גרסה ${latest} — מעדכן...`, 'ok', 5000);
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+      const reg = await navigator.serviceWorker?.getRegistration();
+      if (reg) await reg.update().catch(() => {});
+    } catch(e) {}
+    setTimeout(() => location.replace(location.href.split('?')[0] + '?v=' + latest), 3000);
+  } catch(e) { /* network error — skip silently */ }
 }
 
 // ══════════════════════════════════════════════
