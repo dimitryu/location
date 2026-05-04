@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.0.5";
+const APP_VERSION        = "2.0.6";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -1030,6 +1030,7 @@ let metricsRefreshInterval = null;
 let allGroupsData = {};    // gid → groupDoc data (all groups user belongs to)
 let locationUnsubs = [];   // per-UID location listeners
 let sosUnsubs = [];        // per-group SOS listeners
+let groupEventUnsubs = []; // per-group groupEvents listeners
 let mapGroupFilter = null; // null = all groups, gid = show only that group
 let lastBatteryAlertPct = 100;
 let sosTapCount = 0;
@@ -1482,6 +1483,7 @@ async function initApp() {
   subAdminNotifications();
   subChat();
   subSOS();
+  subGroupEvents();
   subNotifications();
   initBattery();
   setTimeout(() => { if(!mapInit) initMap(); }, 300);
@@ -1503,6 +1505,7 @@ function unsubAll() {
   if (unsubSOS)    { unsubSOS();    unsubSOS    = null; }
   if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
   locationUnsubs.forEach(fn => fn()); locationUnsubs = [];
+  groupEventUnsubs.forEach(fn => fn()); groupEventUnsubs = [];
   activeSosBanners = {};
   updateSOSBanner();
 }
@@ -1545,6 +1548,7 @@ async function loadGroup() {
   const unsubFns = allGroupIds.map(gid =>
     db.collection('groups').doc(gid).onSnapshot(s => {
       if (s.exists) {
+        const prevData = allGroupsData[s.id];
         allGroupsData[s.id] = s.data();
         if (s.id === groupId) {
           groupData = s.data();
@@ -1555,6 +1559,21 @@ async function loadGroup() {
           if (selEl && !focusedMember) selEl.textContent = groupData?.name || '';
         }
         myGroupsList = Object.entries(allGroupsData).map(([id, d]) => ({ id, name: d.name || id }));
+
+        // Detect SOS broadcast via group document field
+        const newD = s.data();
+        const bannerKey = 'grp_' + gid;
+        if (newD.sosActive && !prevData?.sosActive && newD.sosUid !== me?.uid) {
+          activeSosBanners[bannerKey] = { name: newD.sosName || '?', uid: newD.sosUid, isMine: false };
+          updateSOSBanner();
+          playSOSAlert();
+          if (Notification.permission === 'granted') {
+            new Notification('🆘 SOS!', { body: `${newD.sosName || '?'} צריך/ה עזרה!`, icon: './icon.svg' });
+          }
+        } else if (!newD.sosActive && prevData?.sosActive && prevData?.sosUid !== me?.uid) {
+          delete activeSosBanners[bannerKey];
+          updateSOSBanner();
+        }
       }
       renderGroupTab();
       // Re-subscribe locations when member list changes (new member added)
@@ -1599,6 +1618,8 @@ function renderGroupTab() {
       const isMe = uid === me.uid;
       const isAdmMem = uid === gd.adminUid;
       const lastSeen = m.ts ? relativeTime(m.ts.toDate ? m.ts.toDate() : new Date(m.ts)) : '';
+      const batt = isMe ? myBattery : m.battery;
+      const battStr = (batt !== null && batt !== undefined) ? ` · 🔋${batt}%` : '';
       const delBtn  = (isAdm && !isMe) ? `<button class="small-btn del" onclick="removeMemberFrom('${gid}','${uid}')">✕</button>` : '';
       const permBtn = isAdm ? `<button class="small-btn" onclick="openMemberPermissions('${uid}','${gid}')" title="הרשאות">🔒</button>` : '';
       memsHtml += `
@@ -1606,7 +1627,7 @@ function renderGroupTab() {
           <div class="mav" style="background:${color}">${initials(name)}</div>
           <div style="flex:1">
             <div class="mn">${esc(name)} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''} ${isAdmMem?'<span class="badge bdg-a">'+t('admin')+'</span>':''}</div>
-            <div class="ms">${lastSeen ? t('lastSeen')+': '+lastSeen : ''}</div>
+            <div class="ms">${lastSeen ? t('lastSeen')+': '+lastSeen : ''}${battStr}</div>
           </div>
           <div style="display:flex;gap:4px">${permBtn}${delBtn}</div>
         </div>`;
@@ -2238,8 +2259,17 @@ function checkGeofencing(lat, lng) {
     if (dist <= p.radius && !arrivedSet.has(p.id)) {
       arrivedSet.add(p.id);
       sendArrivalNotif(p.name);
-      // Fix 6: notify admin via Firestore
       notifyAdminArrival(p.name, lat, lng);
+      // Save to group notifications history
+      const memberName = myProfile?.name || me?.email || '?';
+      saveGroupNotification('arrival', memberName, `📍 ${memberName} — ${t('arriveAt')}: ${p.name}`, null);
+      // Broadcast to all group members via groupEvents subcollection
+      if (groupId) {
+        db.collection('groups').doc(groupId).collection('groupEvents').add({
+          type: 'arrival', uid: me.uid, name: memberName, pointName: p.name,
+          ts: firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(()=>{});
+      }
     } else if (dist > p.radius * 1.5 && arrivedSet.has(p.id)) {
       arrivedSet.delete(p.id);
     }
@@ -3057,30 +3087,35 @@ async function loadLocationLog() {
     return addrCache[key] || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
   };
 
-  // Show member selector for admin
-  const isAdmin = groupData?.adminUid === me.uid;
+  // Show member selector for admin — includes all groups where user is admin
+  const isAdmin = Object.values(allGroupsData).some(gd => gd.adminUid === me?.uid)
+    || groupData?.adminUid === me?.uid;
+  const allAdminMembers = [...new Set(
+    Object.values(allGroupsData)
+      .filter(gd => gd.adminUid === me?.uid)
+      .flatMap(gd => gd.members || [])
+  )];
   const logBar = document.getElementById('logMemberBar');
   const logSel = document.getElementById('logMemberSel');
   const logLbl = document.getElementById('logMemberLbl');
   if (isAdmin && logBar && logSel) {
     logBar.style.display = 'flex';
     if (logLbl) logLbl.textContent = t('logMember');
-    const allMembers = groupData?.members || [];
-    if (logSel.options.length !== allMembers.length + 1) {
-      logSel.innerHTML = `<option value="">${t('dmAll')}</option>`;
-      allMembers.forEach(uid => {
-        const name = members[uid]?.name || uid.slice(0,8);
-        logSel.innerHTML += `<option value="${uid}">${esc(name)}</option>`;
-      });
-    }
+    const memberList = allAdminMembers.length ? allAdminMembers : (groupData?.members || []);
+    logSel.innerHTML = `<option value="">${t('dmAll')}</option>`;
+    memberList.forEach(uid => {
+      const name = members[uid]?.name || (uid === me?.uid ? (myProfile?.name || me?.email) : uid.slice(0,8));
+      logSel.innerHTML += `<option value="${uid}">${esc(name)}</option>`;
+    });
     logSel.value = logViewUid || '';
   } else if (logBar) {
     logBar.style.display = 'none';
   }
 
   try {
+    const memberList = allAdminMembers.length ? allAdminMembers : (groupData?.members || [me.uid]);
     const uidsToLoad = isAdmin
-      ? (logViewUid ? [logViewUid] : (groupData?.members || [me.uid]))
+      ? (logViewUid ? [logViewUid] : memberList)
       : [me.uid];
     const trackDocs = await Promise.all(
       uidsToLoad.map(uid => db.collection('tracks').doc(`${groupId}_${uid}_${selectedDate}`).get())
@@ -3303,7 +3338,13 @@ function toggleMemberSel() {
 
 function setMapGroupFilter(gid) {
   mapGroupFilter = gid;
-  buildMemberSelDrop(); // rebuild dropdown content without toggling open/close
+  const nameEl = document.getElementById('selName');
+  if (nameEl && !focusedMember) {
+    nameEl.textContent = gid
+      ? (allGroupsData[gid]?.name || gid.slice(0,6))
+      : (groupData?.name || localStorage.getItem('fl_grp_name') || '');
+  }
+  buildMemberSelDrop();
   Object.keys(members).forEach(id => {
     if (id !== me?.uid) updateMemberMarker(id, members[id]);
   });
@@ -3317,7 +3358,9 @@ function selectMember(uid) {
   // Show selected member name, or group name when showing all
   if (nameEl) nameEl.textContent = uid
     ? (members[uid]?.name || uid.slice(0,6))
-    : (groupData?.name || localStorage.getItem('fl_grp_name') || '');
+    : mapGroupFilter
+      ? (allGroupsData[mapGroupFilter]?.name || '')
+      : (groupData?.name || localStorage.getItem('fl_grp_name') || '');
   // Re-render all markers
   Object.keys(members).forEach(id => {
     if (id !== me.uid) updateMemberMarker(id, members[id]);
@@ -3468,6 +3511,11 @@ function triggerSOS() {
     ts: firebase.firestore.FieldValue.serverTimestamp(),
     active: true
   }).catch(()=>{});
+  // Write SOS to group doc so ALL members see it via their existing group subscription
+  db.collection('groups').doc(groupId).update({
+    sosActive: true, sosUid: me.uid, sosName: myName,
+    sosTs: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(()=>{});
   saveGroupNotification('sos', myName, `🆘 SOS — ${myName}`, null);
   showToastLong(t('sosSent'), 'err');
 }
@@ -3481,6 +3529,7 @@ function cancelSOS() {
     .where('uid','==',me.uid).where('active','==',true).get()
     .then(snap => snap.docs.forEach(d => d.ref.update({active:false})))
     .catch(()=>{});
+  db.collection('groups').doc(groupId).update({ sosActive: false }).catch(()=>{});
   showToast(t('sosCancel'), 'ok');
 }
 
@@ -3537,13 +3586,40 @@ function subSOS() {
   unsubSOS = () => { sosUnsubs.forEach(fn => fn()); sosUnsubs = []; };
 }
 
+function subGroupEvents() {
+  groupEventUnsubs.forEach(fn => fn()); groupEventUnsubs = [];
+  const gids = Object.keys(allGroupsData).length > 0 ? Object.keys(allGroupsData) : (groupId ? [groupId] : []);
+  if (!gids.length) return;
+  gids.forEach(gid => {
+    const unsub = db.collection('groups').doc(gid).collection('groupEvents')
+      .orderBy('ts', 'desc').limit(20)
+      .onSnapshot(snap => {
+        snap.docChanges().forEach(change => {
+          if (change.type !== 'added') return;
+          const d = change.doc.data();
+          if (d.uid === me?.uid) return; // don't notify self
+          const ts = d.ts?.toDate ? d.ts.toDate() : new Date();
+          if (Date.now() - ts.getTime() > 60000) return; // only show events < 1 min old
+          if (d.type === 'arrival') {
+            const msg = `📍 ${esc(d.name)} — ${t('arriveAt')}: ${esc(d.pointName)}`;
+            showToastLong(msg, 'ok');
+            if (Notification.permission === 'granted') {
+              new Notification('📍 Family Location', { body: msg, icon: './icon.svg' });
+            }
+          }
+        });
+      });
+    groupEventUnsubs.push(unsub);
+  });
+}
+
 function playSOSAlert() {
-  // Vibrate 5 seconds pattern
-  if (navigator.vibrate) navigator.vibrate([400,150,400,150,400,150,400,150,400]);
-  // Beeping sound via Web Audio API
+  // Vibrate 10 seconds pattern
+  if (navigator.vibrate) navigator.vibrate([400,150,400,150,400,150,400,150,400,150,400,150,400,150,400,150,400,150,400]);
+  // Beeping sound via Web Audio API — 10 seconds (20 beeps × 0.5s)
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 20; i++) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain); gain.connect(ctx.destination);
