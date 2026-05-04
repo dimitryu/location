@@ -8,10 +8,10 @@
 <meta name="theme-color" content="#1a73e8">
 <title>Family Location</title>
 <link rel="manifest" href="manifest.json">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png">
-<link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512.png">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.5.0";
+const APP_VERSION        = "1.6.0";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -543,7 +543,7 @@ select.lang-sel{
 <!-- Install Banner (shows ONLY when Chrome fires beforeinstallprompt) -->
 <div id="installBanner">
   <div class="ib-icon">
-    <img src="icons/icon-192.png" alt="Family Location" onerror="this.style.display='none';this.parentNode.innerHTML='📍'">
+    <img src="icon-192.png" alt="Family Location" onerror="this.style.display='none';this.parentNode.innerHTML='📍'">
   </div>
   <div class="ib-txt">
     <strong>Family Location</strong>
@@ -1165,20 +1165,15 @@ function genCode(len) {
 async function initApp() {
   showView('vApp');
   renderUI();
-  // Load group
   await loadGroup();
-  // Subscribe to locations
   subLocations();
-  // Subscribe to points
   subPoints();
-  // Subscribe to admin arrival notifications
   subAdminNotifications();
-  // Init map (after DOM is shown)
   setTimeout(() => { if(!mapInit) initMap(); }, 300);
-  // Start tracking
   startTracking();
-  // Request notifs
   reqNotifPermQuiet();
+  // Check for a newer version on GitHub (silent, runs in background)
+  setTimeout(checkForUpdate, 4000);
 }
 
 function unsubAll() {
@@ -2138,29 +2133,11 @@ async function doInstall() {
   } else if (isInStandaloneMode) {
     showToast('✅ ' + t('sInstalled'));
   } else {
-    showAndroidInstall();
+    // Chrome hasn't offered the prompt yet — clear any previous dismissal so
+    // the banner auto-appears as soon as Chrome decides the app is installable
+    localStorage.removeItem('fl_dismissed');
+    showToast('📲 Chrome יציע התקנה בקרוב — נסה שוב עוד רגע', '', 5000);
   }
-}
-
-function showAndroidInstall() {
-  openModal(`
-    <div class="mttl">📲 ${t('androidInstTitle')}</div>
-    <div style="display:flex;flex-direction:column;gap:12px;margin:16px 0">
-      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
-        <span style="font-size:26px">1️⃣</span>
-        <div style="font-weight:700;font-size:14px">${t('androidInstStep1')}</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
-        <span style="font-size:26px">2️⃣</span>
-        <div style="font-weight:700;font-size:14px">${t('androidInstStep2')}</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
-        <span style="font-size:26px">3️⃣</span>
-        <div style="font-weight:700;font-size:14px">${t('androidInstStep3')}</div>
-      </div>
-    </div>
-    <button class="btn btn-p" onclick="closeModal();localStorage.removeItem('fl_dismissed')">${t('cancel')}</button>
-  `);
 }
 function doInstallPWA() { doInstall(); }
 function doInstallOrHelp() { doInstall(); }
@@ -2620,8 +2597,42 @@ function updateMyMarker(lat, lng, accuracy) {
   myAccCircle = L.circle([lat,lng],{radius:accuracy,color:'#1a73e8',fillColor:'#1a73e8',fillOpacity:0.08,weight:1}).addTo(mapObj);
 }
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+//  AUTO-UPDATE: fetch version from GitHub, reload if newer
+// ══════════════════════════════════════════════
+async function checkForUpdate() {
+  try {
+    const resp = await fetch(
+      'https://raw.githubusercontent.com/dimitryu/location/main/index.html',
+      { cache: 'no-cache', signal: AbortSignal.timeout(8000) }
+    );
+    if (!resp.ok) return;
+    const html = await resp.text();
+    const m = html.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+    if (!m) return;
+    const latest = m[1];
+    if (latest === APP_VERSION) return;
+    // Newer version found — update SW cache then reload
+    showToast(`🆕 גרסה ${latest} — מעדכן...`, 'ok', 6000);
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) await reg.update().catch(() => {});
+    setTimeout(() => location.reload(true), 3500);
+  } catch(e) { /* network error or timeout — skip silently */ }
+}
+
+// ══════════════════════════════════════════════
+//  PERIODIC BACKGROUND SYNC (installed PWA only)
+// ══════════════════════════════════════════════
+async function registerPeriodicSync(reg) {
+  if (!('periodicSync' in reg)) return;
+  try {
+    const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+    if (status.state !== 'granted') return;
+    await reg.periodicSync.register('location-update', { minInterval: 60 * 1000 });
+  } catch(e) {}
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-  // Apply saved language
   const savedLang = localStorage.getItem('lang') || 'he';
   lang = savedLang;
   document.documentElement.setAttribute('lang', savedLang);
@@ -2629,9 +2640,21 @@ document.addEventListener('DOMContentLoaded', () => {
   renderUI();
   initFirebase();
   initInstallPrompt();
-  // Register service worker
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => registerPeriodicSync(reg))
+      .catch(() => {});
+    // Listen for SW-initiated location requests (Periodic Background Sync)
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data?.type === 'SW_REQUEST_LOCATION') {
+        if (myLat !== null) {
+          pushLocation(myLat, myLng, currentMotion);
+        } else {
+          navigator.geolocation?.getCurrentPosition(onPosition, onPosErr,
+            { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 });
+        }
+      }
+    });
   }
 });
 </script>

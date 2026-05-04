@@ -1,11 +1,12 @@
 // ╔══════════════════════════════════════════╗
-// ║  Family Location — Service Worker v1.0.6 ║
+// ║  Family Location — Service Worker v1.6.0 ║
 // ╚══════════════════════════════════════════╝
-const CACHE = 'family-location-v1.5.0';
+const CACHE = 'family-location-v1.6.0';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  './icon.svg',
   'https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;800;900&display=swap',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
@@ -28,9 +29,10 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Firebase & tile requests — network first, cache fallback
   const url = e.request.url;
-  if (url.includes('firestore') || url.includes('firebase') || url.includes('openstreetmap')) {
+  // Firebase, tiles, GitHub raw — network first
+  if (url.includes('firestore') || url.includes('firebase') ||
+      url.includes('openstreetmap') || url.includes('raw.githubusercontent')) {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
     return;
   }
@@ -49,14 +51,28 @@ self.addEventListener('fetch', e => {
   );
 });
 
+// ── Periodic Background Sync ──
+// Wakes up the SW when installed as PWA; tells any open tab to push GPS
+self.addEventListener('periodicsync', e => {
+  if (e.tag === 'location-update') {
+    e.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+        if (clients.length > 0) {
+          clients.forEach(c => c.postMessage({ type: 'SW_REQUEST_LOCATION' }));
+        }
+      })
+    );
+  }
+});
+
 // Push notifications
 self.addEventListener('push', e => {
   const data = e.data?.json() || { title: 'Family Tracker', body: '' };
   e.waitUntil(
     self.registration.showNotification(data.title || 'Family Tracker', {
       body: data.body,
-      icon: './icons/icon.svg',
-      badge: './icons/icon.svg',
+      icon: './icon.svg',
+      badge: './icon.svg',
       vibrate: [200, 100, 200]
     })
   );
