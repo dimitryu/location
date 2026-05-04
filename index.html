@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.4.2";
+const APP_VERSION        = "1.4.3";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -539,37 +539,19 @@ select.lang-sel{
   <button class="btn btn-s mt16" onclick="doLogout()" style="max-width:200px;margin-top:12px" id="bObLogout"></button>
 </div>
 
-<!-- Install Banner -->
+<!-- Install Banner (shows ONLY when Chrome fires beforeinstallprompt) -->
 <div id="installBanner">
   <div class="ib-icon">
     <img src="icons/icon-192.png" alt="Family Location" onerror="this.style.display='none';this.parentNode.innerHTML='📍'">
   </div>
   <div class="ib-txt">
-    <strong id="ibTitle">Family Location</strong>
-    <span id="ibSub">התקן כאפליקציה על הטלפון</span>
+    <strong>Family Location</strong>
+    <span>התקן כאפליקציה על הטלפון</span>
   </div>
   <div style="display:flex;gap:6px;flex-shrink:0">
-    <button class="ib-yes" onclick="doInstall()" id="ibYes">התקן</button>
+    <button class="ib-yes" onclick="doInstall()">התקן</button>
     <button class="ib-no" onclick="dismissInstall()">✕</button>
   </div>
-</div>
-
-<!-- Install Waiting Banner (shown before prompt is ready) -->
-<div id="installWaitBanner" style="
-  position:fixed;bottom:calc(var(--nav) + 12px);left:12px;right:12px;
-  background:linear-gradient(135deg,#1565c0,#1976d2);color:#fff;
-  border-radius:16px;padding:12px 14px;display:none;
-  align-items:center;gap:12px;z-index:3001;
-  box-shadow:0 4px 20px rgba(25,118,210,.4);
-  animation:slideUp .4s ease;">
-  <div class="ib-icon">
-    <img src="icons/icon-192.png" alt="" onerror="this.style.display='none';this.parentNode.innerHTML='📍'">
-  </div>
-  <div class="ib-txt">
-    <strong>Family Location</strong>
-    <span>Chrome מכין את האפליקציה...</span>
-  </div>
-  <button class="ib-no" onclick="this.parentElement.style.display='none'">✕</button>
 </div>
 
 <!-- ══════════ APP ══════════ -->
@@ -731,7 +713,7 @@ select.lang-sel{
         </div>
 
         <div style="text-align:center;padding:16px 0;color:var(--text2);font-size:12px">
-          Family Location v<span id="verFoot">1.4.2</span> · dimitryu
+          Family Location v<span id="verFoot">1.4.3</span> · dimitryu
         </div>
       </div>
     </div>
@@ -2042,14 +2024,14 @@ function closeModalOuter(e) { if (e.target === document.getElementById('modal'))
 //  TOAST
 // ══════════════════════════════════════════════
 let toastTimer;
-function showToast(msg, type='', duration=5000) {
+function showToast(msg, type='', duration=3000) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = 'toast ' + type + ' show';
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.className = 'toast ' + type, Math.min(duration, 5000));
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, Math.min(duration, 3000));
 }
-function showToastLong(msg, type='') { showToast(msg, type, 5000); }
+function showToastLong(msg, type='') { showToast(msg, type, 3000); }
 
 // ══════════════════════════════════════════════
 //  CONFETTI
@@ -2098,38 +2080,25 @@ function initInstallPrompt() {
     if (!localStorage.getItem('fl_dismissed')) setTimeout(showIOSInstall, 4000);
     updateInstallUI(); return;
   }
+  // Listen for Chrome's ready signal — only then show the banner
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     deferredInstallPrompt = e;
     updateInstallUI();
-    // Hide waiting banner, show real install banner
-    const wb = document.getElementById('installWaitBanner');
-    if (wb) wb.style.display = 'none';
     if (!localStorage.getItem('fl_dismissed')) {
       setTimeout(() => {
         const b = document.getElementById('installBanner');
         if (b) b.style.display = 'flex';
-      }, 800);
+      }, 1000);
     }
   });
   window.addEventListener('appinstalled', () => {
-    ['installBanner','installWaitBanner'].forEach(id => {
-      const b = document.getElementById(id);
-      if (b) b.style.display = 'none';
-    });
+    const b = document.getElementById('installBanner');
+    if (b) b.style.display = 'none';
     deferredInstallPrompt = null;
     updateInstallUI();
     showToast('✅ ' + t('sInstalled'));
   });
-  // Show waiting banner after 5s if prompt hasn't fired yet
-  if (!localStorage.getItem('fl_dismissed')) {
-    setTimeout(() => {
-      if (!deferredInstallPrompt && !isInStandaloneMode) {
-        const wb = document.getElementById('installWaitBanner');
-        if (wb) wb.style.display = 'flex';
-      }
-    }, 5000);
-  }
   updateInstallUI();
 }
 
@@ -2151,15 +2120,13 @@ function updateInstallUI() {
 // Called from both settings button and banner
 async function doInstall() {
   if (deferredInstallPrompt) {
-    // Chrome is ready — trigger native install (uses manifest icon)
     try {
       deferredInstallPrompt.prompt();
       const { outcome } = await deferredInstallPrompt.userChoice;
       if (outcome === 'accepted') {
         deferredInstallPrompt = null;
-        ['installBanner','installWaitBanner'].forEach(id => {
-          const b = document.getElementById(id); if (b) b.style.display = 'none';
-        });
+        const b = document.getElementById('installBanner');
+        if (b) b.style.display = 'none';
         updateInstallUI();
       }
     } catch(e) {}
@@ -2168,10 +2135,8 @@ async function doInstall() {
   } else if (isInStandaloneMode) {
     showToast('✅ ' + t('sInstalled'));
   } else {
-    // Prompt not fired yet — show waiting banner prominently
-    const wb = document.getElementById('installWaitBanner');
-    if (wb) wb.style.display = 'flex';
-    showToast('Chrome מכין את הבאנר — המתן...', '', 4000);
+    // Chrome hasn't offered prompt yet
+    showToast('הבאנר יופיע כשChrome יהיה מוכן', '', 3000);
   }
 }
 function doInstallPWA() { doInstall(); }
