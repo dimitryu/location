@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.4.3";
+const APP_VERSION        = "1.5.0";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -409,15 +409,16 @@ button{font-family:inherit;cursor:pointer}
 /* ════════════ TOAST ════════════ */
 #toast{
   position:fixed;bottom:calc(var(--nav)+16px);left:50%;
-  transform:translateX(-50%) translateY(100px);
-  background:#333;color:#fff;padding:11px 20px;border-radius:999px;
+  transform:translateX(-50%) translateY(120px);
+  background:#333;color:#fff;padding:11px 16px 11px 20px;border-radius:999px;
   font-size:14px;font-weight:600;z-index:8000;
-  transition:transform .3s ease;white-space:nowrap;
-  max-width:calc(100vw - 40px);text-align:center;
+  transition:transform .3s ease;white-space:normal;word-break:break-word;
+  max-width:calc(100vw - 40px);display:flex;align-items:center;gap:10px;
 }
 #toast.show{transform:translateX(-50%) translateY(0)}
 #toast.ok{background:#1b5e20}
 #toast.err{background:var(--red)}
+.toast-x{background:none;border:none;color:inherit;font-size:20px;line-height:1;cursor:pointer;opacity:.75;padding:0;flex-shrink:0}
 
 /* ════════════ EMPTY ════════════ */
 .empty{text-align:center;padding:48px 20px;color:var(--text2)}
@@ -1889,10 +1890,7 @@ function reqNotifPermQuiet() {
 //  TAB SWITCHING
 // ══════════════════════════════════════════════
 function switchTab(name) {
-  // Clear any visible toast when switching tabs
-  clearTimeout(toastTimer);
-  const toastEl = document.getElementById('toast');
-  if (toastEl) toastEl.className = 'toast';
+  closeToast();
 
   // Clear route when leaving map tab
   if (name !== 'map' && routeLayer && mapObj) {
@@ -2026,12 +2024,17 @@ function closeModalOuter(e) { if (e.target === document.getElementById('modal'))
 let toastTimer;
 function showToast(msg, type='', duration=3000) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'toast ' + type + ' show';
+  el.innerHTML = `<span style="flex:1">${esc(msg)}</span><button class="toast-x" onclick="closeToast()">✕</button>`;
+  el.className = type + ' show';
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.className = 'toast'; }, Math.min(duration, 3000));
+  toastTimer = setTimeout(closeToast, duration);
 }
-function showToastLong(msg, type='') { showToast(msg, type, 3000); }
+function closeToast() {
+  clearTimeout(toastTimer);
+  const el = document.getElementById('toast');
+  if (el) el.className = '';
+}
+function showToastLong(msg, type='') { showToast(msg, type, 8000); }
 
 // ══════════════════════════════════════════════
 //  CONFETTI
@@ -2135,9 +2138,29 @@ async function doInstall() {
   } else if (isInStandaloneMode) {
     showToast('✅ ' + t('sInstalled'));
   } else {
-    // Chrome hasn't offered prompt yet
-    showToast('הבאנר יופיע כשChrome יהיה מוכן', '', 3000);
+    showAndroidInstall();
   }
+}
+
+function showAndroidInstall() {
+  openModal(`
+    <div class="mttl">📲 ${t('androidInstTitle')}</div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin:16px 0">
+      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
+        <span style="font-size:26px">1️⃣</span>
+        <div style="font-weight:700;font-size:14px">${t('androidInstStep1')}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
+        <span style="font-size:26px">2️⃣</span>
+        <div style="font-weight:700;font-size:14px">${t('androidInstStep2')}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;background:var(--bg3);border-radius:12px;padding:14px">
+        <span style="font-size:26px">3️⃣</span>
+        <div style="font-weight:700;font-size:14px">${t('androidInstStep3')}</div>
+      </div>
+    </div>
+    <button class="btn btn-p" onclick="closeModal();localStorage.removeItem('fl_dismissed')">${t('cancel')}</button>
+  `);
 }
 function doInstallPWA() { doInstall(); }
 function doInstallOrHelp() { doInstall(); }
@@ -2373,58 +2396,51 @@ async function loadLocationLog() {
       const color = colorForUid(uid);
       const isMe = uid === me.uid;
 
-      // ── Smart segmentation ──
-      // Rule: group consecutive points where user either:
-      //   A) stayed within STAY_DIST_M (≤50m) = "still" segment
-      //   B) moved continuously in same motion type = "movement" segment
-      // Merge short (<1min) segments with neighbors
-      const STAY_R = 60;  // consider "same place" if within 60m
+      // ── Location-based segmentation: group consecutive points within 25m of anchor ──
+      // Merges GPS jitter — same location = one row with start→end time
+      const SAME_LOC_M = 25;
+      const MIN_DUR_MS = 60000; // skip segments < 1 min
       const segs = [];
-      let segStart = 0;
+      let anchorPt = rawPts[0];
+      let segStartIdx = 0;
 
-      for (let j = 1; j <= rawPts.length; j++) {
-        const isLast = j === rawPts.length;
-        const prev = rawPts[j-1];
-        const cur  = isLast ? null : rawPts[j];
+      const pushSeg = (startIdx, endIdx) => {
+        const durationMs = rawPts[endIdx].ts - rawPts[startIdx].ts;
+        if (durationMs < MIN_DUR_MS) return;
+        const slice = rawPts.slice(startIdx, endIdx + 1);
+        const cnt = {};
+        slice.forEach(p => { const m = p.motion || 'still'; cnt[m] = (cnt[m]||0) + 1; });
+        const dom = Object.entries(cnt).sort((a,b) => b[1]-a[1])[0][0];
+        segs.push({
+          motion: dom,
+          startTs: rawPts[startIdx].ts,
+          endTs: rawPts[endIdx].ts,
+          lat: anchorPt.lat, lng: anchorPt.lng,
+          isOngoing: Date.now() - rawPts[endIdx].ts < 120000
+        });
+      };
 
-        // Check if we should close segment
-        let close = isLast;
-        if (!isLast) {
-          const movedFromSegStart = haversine(rawPts[segStart].lat, rawPts[segStart].lng, cur.lat, cur.lng);
-          const motionSwitch = cur.motion !== prev.motion &&
-            (cur.motion === 'still' || prev.motion === 'still'); // only split on still↔moving
-          if (motionSwitch || movedFromSegStart > 300) close = true;
-        }
-
-        if (close) {
-          const totalMoved = haversine(rawPts[segStart].lat, rawPts[segStart].lng, prev.lat, prev.lng);
-          const isStill = totalMoved <= STAY_R;
-          const durationMs = prev.ts - rawPts[segStart].ts;
-          if (durationMs >= 60000) { // skip segments < 1 min
-            segs.push({
-              motion: isStill ? 'still' : (rawPts[segStart].motion || 'driving'),
-              startTs: rawPts[segStart].ts,
-              endTs: prev.ts,
-              startLat: rawPts[segStart].lat, startLng: rawPts[segStart].lng,
-              endLat: prev.lat, endLng: prev.lng,
-              isStill
-            });
-          }
-          segStart = j;
+      for (let j = 1; j < rawPts.length; j++) {
+        const dist = haversine(anchorPt.lat, anchorPt.lng, rawPts[j].lat, rawPts[j].lng);
+        if (dist > SAME_LOC_M) {
+          pushSeg(segStartIdx, j - 1);
+          anchorPt = rawPts[j];
+          segStartIdx = j;
         }
       }
+      pushSeg(segStartIdx, rawPts.length - 1);
 
       // Build HTML rows with addresses
       const rowsHtml = [];
       for (const seg of segs) {
-        const isNow = nowTs - seg.endTs < 120000; // "now" if < 2 min ago
+        const isNow = seg.isOngoing;
         const endStr = isNow ? 'עכשיו' : fmt(seg.endTs);
         const dur = durStr(seg.endTs - seg.startTs);
-        const addr = await getAddr(seg.endLat, seg.endLng);
+        const addr = await getAddr(seg.lat, seg.lng);
         const ico = motionIcon(seg.motion);
         const lbl = motionHe(seg.motion);
         rowsHtml.push(`
-          <tr style="border-top:1px solid var(--border);cursor:pointer" onclick="switchTab('map');flyToPoint(${seg.endLat},${seg.endLng})">
+          <tr style="border-top:1px solid var(--border);cursor:pointer" onclick="switchTab('map');flyToPoint(${seg.lat},${seg.lng})">
             <td style="padding:9px 12px;font-weight:600;white-space:nowrap">${fmt(seg.startTs)} – ${endStr}</td>
             <td style="padding:9px 12px">${ico} ${lbl}</td>
             <td style="padding:9px 12px;color:var(--text2);white-space:nowrap">${dur}</td>
