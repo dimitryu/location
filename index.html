@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.4.1";
+const APP_VERSION        = "1.4.2";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -164,20 +164,24 @@ button{font-family:inherit;cursor:pointer}
   box-shadow:var(--shadow);display:flex;align-items:center;gap:6px;color:var(--text);
 }
 .m-priv.hid{background:var(--red);color:#fff}
-/* ── INSTALL BANNER (vaad style) ── */
+/* ── INSTALL BANNER (with custom icon) ── */
 #installBanner{
   position:fixed;bottom:calc(var(--nav) + 12px);left:12px;right:12px;
   background:linear-gradient(135deg,#1565c0,#1976d2);color:#fff;
-  border-radius:16px;padding:12px 16px;display:none;
-  align-items:center;gap:10px;z-index:3001;
+  border-radius:16px;padding:12px 14px;display:none;
+  align-items:center;gap:12px;z-index:3001;
   box-shadow:0 4px 20px rgba(25,118,210,.4);
   animation:slideUp .4s ease;
 }
-.ib-ico{font-size:28px;flex-shrink:0}
-.ib-txt{flex:1}
+.ib-icon{
+  width:48px;height:48px;border-radius:12px;flex-shrink:0;overflow:hidden;
+  background:#fff;display:flex;align-items:center;justify-content:center;
+}
+.ib-icon img{width:44px;height:44px;border-radius:10px;object-fit:cover}
+.ib-txt{flex:1;min-width:0}
 .ib-txt strong{font-size:14px;display:block;font-weight:800}
-.ib-txt span{font-size:12px;opacity:.85}
-.ib-yes{padding:8px 16px;background:#fff;color:#1565c0;border:none;border-radius:10px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}
+.ib-txt span{font-size:11px;opacity:.85}
+.ib-yes{padding:8px 16px;background:#fff;color:#1565c0;border:none;border-radius:10px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap}
 .ib-no{padding:8px 10px;background:rgba(255,255,255,.2);border:none;border-radius:10px;color:#fff;font-size:13px;cursor:pointer}
 /* Map FAB buttons — bottom LEFT, above zoom */
 .map-fabs{position:absolute;bottom:160px;left:14px;z-index:1000;display:flex;flex-direction:column;gap:8px}
@@ -535,17 +539,37 @@ select.lang-sel{
   <button class="btn btn-s mt16" onclick="doLogout()" style="max-width:200px;margin-top:12px" id="bObLogout"></button>
 </div>
 
-<!-- Install Banner (shows automatically when Chrome is ready) -->
+<!-- Install Banner -->
 <div id="installBanner">
-  <div class="ib-ico">📲</div>
+  <div class="ib-icon">
+    <img src="icons/icon-192.png" alt="Family Location" onerror="this.style.display='none';this.parentNode.innerHTML='📍'">
+  </div>
   <div class="ib-txt">
-    <strong id="ibTitle">התקן את Family Location</strong>
-    <span id="ibSub">עבוד ללא דפדפן, כמו אפליקציה אמיתית</span>
+    <strong id="ibTitle">Family Location</strong>
+    <span id="ibSub">התקן כאפליקציה על הטלפון</span>
   </div>
   <div style="display:flex;gap:6px;flex-shrink:0">
     <button class="ib-yes" onclick="doInstall()" id="ibYes">התקן</button>
     <button class="ib-no" onclick="dismissInstall()">✕</button>
   </div>
+</div>
+
+<!-- Install Waiting Banner (shown before prompt is ready) -->
+<div id="installWaitBanner" style="
+  position:fixed;bottom:calc(var(--nav) + 12px);left:12px;right:12px;
+  background:linear-gradient(135deg,#1565c0,#1976d2);color:#fff;
+  border-radius:16px;padding:12px 14px;display:none;
+  align-items:center;gap:12px;z-index:3001;
+  box-shadow:0 4px 20px rgba(25,118,210,.4);
+  animation:slideUp .4s ease;">
+  <div class="ib-icon">
+    <img src="icons/icon-192.png" alt="" onerror="this.style.display='none';this.parentNode.innerHTML='📍'">
+  </div>
+  <div class="ib-txt">
+    <strong>Family Location</strong>
+    <span>Chrome מכין את האפליקציה...</span>
+  </div>
+  <button class="ib-no" onclick="this.parentElement.style.display='none'">✕</button>
 </div>
 
 <!-- ══════════ APP ══════════ -->
@@ -707,7 +731,7 @@ select.lang-sel{
         </div>
 
         <div style="text-align:center;padding:16px 0;color:var(--text2);font-size:12px">
-          Family Location v<span id="verFoot">1.4.1</span> · dimitryu
+          Family Location v<span id="verFoot">1.4.2</span> · dimitryu
         </div>
       </div>
     </div>
@@ -1883,7 +1907,12 @@ function reqNotifPermQuiet() {
 //  TAB SWITCHING
 // ══════════════════════════════════════════════
 function switchTab(name) {
-  // Fix 6: clear route when leaving map tab
+  // Clear any visible toast when switching tabs
+  clearTimeout(toastTimer);
+  const toastEl = document.getElementById('toast');
+  if (toastEl) toastEl.className = 'toast';
+
+  // Clear route when leaving map tab
   if (name !== 'map' && routeLayer && mapObj) {
     mapObj.removeLayer(routeLayer);
     routeLayer = null;
@@ -2073,20 +2102,34 @@ function initInstallPrompt() {
     e.preventDefault();
     deferredInstallPrompt = e;
     updateInstallUI();
+    // Hide waiting banner, show real install banner
+    const wb = document.getElementById('installWaitBanner');
+    if (wb) wb.style.display = 'none';
     if (!localStorage.getItem('fl_dismissed')) {
       setTimeout(() => {
         const b = document.getElementById('installBanner');
         if (b) b.style.display = 'flex';
-      }, 2500);
+      }, 800);
     }
   });
   window.addEventListener('appinstalled', () => {
-    const b = document.getElementById('installBanner');
-    if (b) b.style.display = 'none';
+    ['installBanner','installWaitBanner'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.style.display = 'none';
+    });
     deferredInstallPrompt = null;
     updateInstallUI();
-    showToast('✅ ' + t('sInstalled'), 'ok');
+    showToast('✅ ' + t('sInstalled'));
   });
+  // Show waiting banner after 5s if prompt hasn't fired yet
+  if (!localStorage.getItem('fl_dismissed')) {
+    setTimeout(() => {
+      if (!deferredInstallPrompt && !isInStandaloneMode) {
+        const wb = document.getElementById('installWaitBanner');
+        if (wb) wb.style.display = 'flex';
+      }
+    }, 5000);
+  }
   updateInstallUI();
 }
 
@@ -2108,14 +2151,15 @@ function updateInstallUI() {
 // Called from both settings button and banner
 async function doInstall() {
   if (deferredInstallPrompt) {
-    // Chrome is ready — native install with custom icon
+    // Chrome is ready — trigger native install (uses manifest icon)
     try {
       deferredInstallPrompt.prompt();
       const { outcome } = await deferredInstallPrompt.userChoice;
       if (outcome === 'accepted') {
         deferredInstallPrompt = null;
-        const b = document.getElementById('installBanner');
-        if (b) b.style.display = 'none';
+        ['installBanner','installWaitBanner'].forEach(id => {
+          const b = document.getElementById(id); if (b) b.style.display = 'none';
+        });
         updateInstallUI();
       }
     } catch(e) {}
@@ -2124,19 +2168,10 @@ async function doInstall() {
   } else if (isInStandaloneMode) {
     showToast('✅ ' + t('sInstalled'));
   } else {
-    // Chrome not ready — show status message, NOT manual install instructions
-    openModal(`
-      <div class="mttl">📲 ${t('sInstallAlways')}</div>
-      <div style="background:var(--bg3);border-radius:12px;padding:16px;margin:12px 0;text-align:center">
-        <div style="font-size:36px;margin-bottom:8px">⏳</div>
-        <div style="font-weight:700;font-size:15px">Chrome מכין את האפליקציה...</div>
-        <div style="font-size:13px;color:var(--text2);margin-top:8px">
-          Chrome ישלח התראת התקנה אוטומטית תוך כמה שניות.<br>
-          הבאנר יצוץ בתחתית המסך — לחץ <b>התקן</b>.
-        </div>
-      </div>
-      <button class="btn btn-p" onclick="closeModal()">הבנתי</button>
-    `);
+    // Prompt not fired yet — show waiting banner prominently
+    const wb = document.getElementById('installWaitBanner');
+    if (wb) wb.style.display = 'flex';
+    showToast('Chrome מכין את הבאנר — המתן...', '', 4000);
   }
 }
 function doInstallPWA() { doInstall(); }
@@ -2318,19 +2353,31 @@ async function loadLocationLog() {
   const motionIcon = m => ({ still:'🔵', walking:'🚶', cycling:'🚴', driving:'🚗' }[m] || '⚫');
   const motionHe   = m => ({ still:'עמד', walking:'הלך', cycling:'אופניים', driving:'נסע' }[m] || m);
 
+  // Helper: find nearest saved point within 20m — use its name as address
+  const nearestPoint = (lat, lng) => {
+    for (const p of points) {
+      if (haversine(lat, lng, p.lat, p.lng) <= 20) return p.name;
+    }
+    return null;
+  };
+
   // Reverse geocode via OSM (cached)
   const addrCache = {};
   const getAddr = async (lat, lng) => {
+    // Check saved points first — most accurate for familiar places
+    const ptName = nearestPoint(lat, lng);
+    if (ptName) return '📍 ' + ptName;
+
     const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
     if (addrCache[key]) return addrCache[key];
     try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1`,
         { headers: {'Accept-Language': lang} });
       if (r.ok) {
         const j = await r.json();
         const parts = j.address;
-        // Israeli address format: street name + house number
-        const street = parts?.road || parts?.pedestrian || parts?.footway || '';
+        // Israeli address format: street name + house number + city
+        const street = parts?.road || parts?.pedestrian || parts?.footway || parts?.residential || '';
         const num    = parts?.house_number || '';
         const city   = parts?.city || parts?.town || parts?.village || parts?.suburb || '';
         const addr   = [street, num, city].filter(Boolean).join(' ');
