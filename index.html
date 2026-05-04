@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.6.1";
+const APP_VERSION        = "2.0.0";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -456,6 +456,116 @@ select.lang-sel{
 }
 .small-btn.del{background:rgba(234,67,53,.15);color:var(--red)}
 @media print{.no-print{display:none!important}}
+
+/* ════════════ ANIMATED MARKERS ════════════ */
+@keyframes markerPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(26,115,232,.5),0 2px 8px rgba(0,0,0,.35)}
+  50%{box-shadow:0 0 0 10px rgba(26,115,232,0),0 2px 8px rgba(0,0,0,.35)}
+}
+.mm.moving{animation:markerPulse 1.6s ease-in-out infinite}
+
+/* ════════════ STATUS BADGE ════════════ */
+.status-badge{
+  position:absolute;top:-6px;right:-6px;
+  font-size:12px;background:#fff;border-radius:50%;
+  width:20px;height:20px;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 1px 4px rgba(0,0,0,.3);
+}
+.mm{position:relative}
+
+/* ════════════ SOS ════════════ */
+.sos-fab{
+  position:absolute;bottom:220px;right:14px;z-index:1001;
+  width:50px;height:50px;border-radius:50%;border:none;
+  background:#c62828;color:#fff;font-size:13px;font-weight:900;cursor:pointer;
+  box-shadow:0 4px 18px rgba(198,40,40,.5);
+  display:flex;align-items:center;justify-content:center;font-family:inherit;
+  transition:transform .15s;
+}
+.sos-fab:active{transform:scale(.92)}
+@keyframes sosPulse{0%,100%{box-shadow:0 4px 18px rgba(198,40,40,.5)}
+  50%{box-shadow:0 4px 28px rgba(198,40,40,.85),0 0 0 14px rgba(198,40,40,.12)}}
+.sos-active .sos-fab{animation:sosPulse 1s ease-in-out infinite}
+.sos-marker{
+  background:#c62828;color:#fff;border:3px solid #fff;
+  border-radius:50%;width:46px;height:46px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:900;
+  box-shadow:0 2px 12px rgba(198,40,40,.6);
+}
+
+/* ════════════ QUIET MODE ════════════ */
+.m-priv.quiet{background:#f57c00;color:#fff}
+
+/* ════════════ CHAT ════════════ */
+#tp-chat{display:none;flex-direction:column;padding:0;overflow:hidden}
+#tp-chat.on{display:flex}
+.chat-msgs{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.chat-input-bar{
+  padding:10px 12px;background:var(--card);border-top:1px solid var(--border);
+  display:flex;gap:8px;align-items:center;
+  padding-bottom:calc(10px + env(safe-area-inset-bottom));
+}
+.chat-input{
+  flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:24px;
+  font-size:14px;font-family:inherit;background:var(--bg);color:var(--text);
+  resize:none;outline:none;line-height:1.4;max-height:100px;
+}
+.chat-input:focus{border-color:var(--primary)}
+.chat-send{
+  width:42px;height:42px;border-radius:50%;border:none;
+  background:var(--primary);color:#fff;font-size:20px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.msg-bubble{
+  max-width:78%;padding:9px 13px;border-radius:16px;
+  font-size:14px;line-height:1.45;word-break:break-word;
+}
+.msg-mine{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px}
+.msg-theirs{align-self:flex-start;background:var(--card);color:var(--text);border-bottom-left-radius:4px;box-shadow:var(--shadow)}
+.msg-sos{align-self:center;background:#c62828;color:#fff;border-radius:12px;font-weight:800;text-align:center}
+.msg-name{font-size:10px;font-weight:700;margin-bottom:3px;opacity:.7}
+.msg-time{font-size:10px;opacity:.55;margin-top:3px;text-align:right}
+.chat-badge{
+  position:absolute;top:4px;right:4px;background:var(--red);color:#fff;
+  border-radius:50%;width:16px;height:16px;font-size:10px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;
+}
+#nb-chat{position:relative}
+
+/* ════════════ STATUS PICKER ════════════ */
+.status-picker{
+  position:absolute;top:52px;right:12px;z-index:1002;
+  background:var(--card);border-radius:12px;padding:6px;box-shadow:var(--shadow);
+  display:none;flex-direction:column;gap:4px;min-width:150px;
+}
+.status-picker.open{display:flex}
+.status-item{
+  display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;
+  cursor:pointer;font-size:13px;font-weight:600;transition:background .15s;
+}
+.status-item:hover,.status-item.active{background:var(--bg3)}
+.status-btn{
+  position:absolute;top:12px;right:72px;z-index:1000;
+  background:var(--card);border:none;border-radius:10px;padding:7px 12px;
+  font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;
+  box-shadow:var(--shadow);display:flex;align-items:center;gap:6px;color:var(--text);
+}
+
+/* ════════════ ETA ════════════ */
+.eta-chip{
+  background:var(--primary);color:#fff;border-radius:8px;
+  padding:3px 8px;font-size:11px;font-weight:700;display:inline-block;margin-top:4px;
+}
+
+/* ════════════ BREADCRUMB ════════════ */
+.bc-dot{
+  width:10px;height:10px;border-radius:50%;border:2px solid #fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.4);
+}
+
+/* ════════════ BATTERY ════════════ */
+.batt-chip{font-size:11px;color:var(--text2);margin-top:2px}
 </style>
 </head>
 <body>
@@ -573,11 +683,16 @@ select.lang-sel{
     <!-- MAP -->
     <div class="tp on" id="tp-map">
       <div id="map"></div>
-      <!-- Privacy btn top-right -->
-      <button class="m-priv no-print" id="privBtn" onclick="togglePrivacy()">
+      <!-- Privacy/Quiet cycle btn top-right -->
+      <button class="m-priv no-print" id="privBtn" onclick="cyclePrivacy()">
         <span id="privIco">👁️</span><span id="privLbl"></span>
       </button>
-      <!-- Member/group selector top-left (shows group name, allows filtering) -->
+      <!-- Status picker (right of privacy btn) -->
+      <button class="status-btn no-print" id="statusBtn" onclick="toggleStatusPicker()">
+        <span id="statusIco">🟢</span>
+      </button>
+      <div class="status-picker no-print" id="statusPicker"></div>
+      <!-- Member/group selector top-left -->
       <div class="m-sel no-print" id="memberSel" style="top:56px">
         <button class="m-sel-btn" onclick="toggleMemberSel()">
           <span id="selIcon">👥</span>
@@ -585,7 +700,7 @@ select.lang-sel{
         </button>
         <div class="m-sel-drop" id="selDrop"></div>
       </div>
-      <!-- Right-side FABs: center + add point, stacked -->
+      <!-- Right-side FABs -->
       <div class="no-print" style="position:absolute;top:52px;right:12px;z-index:1000;display:flex;flex-direction:column;gap:8px">
         <button onclick="centerOnMe()" title="מרכז עליי"
           style="width:42px;height:42px;border-radius:50%;border:none;
@@ -595,11 +710,27 @@ select.lang-sel{
           style="width:42px;height:42px;border-radius:50%;border:none;
                  background:var(--green);color:#fff;font-size:22px;font-weight:900;cursor:pointer;
                  box-shadow:0 3px 10px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center">＋</button>
+        <button onclick="toggleBreadcrumb()" id="bcBtn" title="מסלול breadcrumb"
+          style="width:42px;height:42px;border-radius:50%;border:none;
+                 background:var(--card);color:var(--text);font-size:18px;cursor:pointer;
+                 box-shadow:0 3px 10px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center">🐾</button>
       </div>
+      <!-- SOS button -->
+      <button class="sos-fab no-print" id="sosFab" onclick="triggerSOS()">🆘</button>
       <!-- Add point hint -->
       <div class="add-hint no-print" id="addHint" hidden>
         <span id="addHintTxt"></span>
         <button onclick="cancelAddPoint()">✕</button>
+      </div>
+    </div>
+
+    <!-- CHAT -->
+    <div class="tp" id="tp-chat" style="flex-direction:column">
+      <div class="chat-msgs" id="chatMsgs"></div>
+      <div class="chat-input-bar">
+        <textarea class="chat-input" id="chatInput" rows="1" placeholder="הודעה..."
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMsg()}"></textarea>
+        <button class="chat-send" onclick="sendChatMsg()">➤</button>
       </div>
     </div>
 
@@ -626,12 +757,18 @@ select.lang-sel{
     <!-- METRICS / MOVEMENT -->
     <div class="tp" id="tp-metrics">
       <div class="sec">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
           <div class="sec-h" id="metTitle" style="margin-bottom:0;flex:1"></div>
+          <button onclick="shiftMetricsDate(-1)" title="יום קודם"
+            style="width:32px;height:32px;border:1.5px solid var(--border);border-radius:8px;background:var(--card);
+                   color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">◀</button>
           <input type="date" id="metDatePicker"
             style="border:1.5px solid var(--border);border-radius:10px;padding:7px 10px;
                    font-family:inherit;font-size:13px;background:var(--card);color:var(--text);cursor:pointer"
             onchange="loadMetrics()">
+          <button onclick="shiftMetricsDate(1)" title="יום הבא"
+            style="width:32px;height:32px;border:1.5px solid var(--border);border-radius:8px;background:var(--card);
+                   color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">▶</button>
         </div>
         <div id="metList"></div>
         <div class="sec-h" id="logTitleEl" style="margin-top:16px"></div>
@@ -738,6 +875,11 @@ select.lang-sel{
     <button class="nb" id="nb-metrics" onclick="switchTab('metrics')">
       <span class="ni">📊</span><span class="nl" id="nlMetrics"></span>
     </button>
+    <button class="nb" id="nb-chat" onclick="switchTab('chat')">
+      <span class="ni">💬</span>
+      <span class="chat-badge" id="chatBadge" hidden></span>
+      <span class="nl" id="nlChat"></span>
+    </button>
     <button class="nb" id="nb-settings" onclick="switchTab('settings')">
       <span class="ni">⚙️</span><span class="nl" id="nlSettings"></span>
     </button>
@@ -797,6 +939,29 @@ let notifEnabled = localStorage.getItem('notifEnabled') !== 'false'; // default 
 let focusedMember = null;      // uid to focus on map, null = all
 let bgInterval = null;         // background location interval
 const MOTION_EMOJI = { still:'🔵', walking:'🚶', cycling:'🚴', driving:'🚗' };
+// v2.0.0 globals
+let myStatus      = null;
+let isQuiet       = false;
+let tileLayer     = null;
+let sosActive     = false;
+let breadcrumbLayer = null;
+let breadcrumbOn  = false;
+let unsubChat     = null;
+let unsubSOS      = null;
+let unreadChat    = 0;
+let myBattery     = null;
+let lastSpeedAlert = 0;
+const SPEED_ALERT_MS = 33;   // m/s ≈ 120 km/h
+const TILE_LIGHT = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+const TILE_DARK  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const STATUS_OPTIONS = [
+  {emoji:'🏠', key:'home',    label:{he:'בבית',    en:'Home',     ru:'Дома'}},
+  {emoji:'🏫', key:'school',  label:{he:'בבי"ס',  en:'School',   ru:'Школа'}},
+  {emoji:'💼', key:'work',    label:{he:'בעבודה',  en:'Work',     ru:'Работа'}},
+  {emoji:'🚗', key:'driving', label:{he:'בדרכים',  en:'Driving',  ru:'В пути'}},
+  {emoji:'😴', key:'sleep',   label:{he:'ישן/ה',   en:'Sleeping', ru:'Сплю'}},
+  {emoji:'🙏', key:'dnd',     label:{he:'אל תפריע',en:'Do Not Disturb',ru:'Не беспокоить'}},
+];
 
 // ══════════════════════════════════════════════
 //  MEMBER COLORS
@@ -862,6 +1027,15 @@ const TR = {
     iosInstTitle:'התקנה על iPhone',iosInstStep1:'לחץ על כפתור השיתוף',iosInstStep2:'בחר "הוסף למסך הבית"',iosInstStep3:'לחץ "הוסף" לאישור',
     androidInstTitle:'התקנה על Android',androidInstStep1:'לחץ על תפריט ⋮ (שלוש נקודות) בכרום',androidInstStep2:'בחר "הוסף למסך הבית" או "התקן אפליקציה"',androidInstStep3:'לחץ "הוסף" לאישור',
     renameGroup:'שנה שם קבוצה',renameGroupLbl:'שם הקבוצה',
+    navChat:'צ׳אט',
+    sosBtn:'SOS',sosActive:'SOS פעיל!',sosCancel:'SOS בוטל',sosConfirm:'לשלוח SOS לכל הקבוצה?',sosSent:'🆘 SOS נשלח! הקבוצה מקבלת התראה',
+    privQuiet:'מצב שקט',
+    statusClear:'נקה סטטוס',
+    breadcrumbOn:'מסלול פעיל',breadcrumbOff:'מסלול כבוי',
+    speedAlert:'נסיעה מהירה',
+    historyPrev:'יום קודם',historyNext:'יום הבא',
+    offlineMsg:'מיקום לא עדכני (אופליין)',
+    etaLabel:'ETA',
   },
   en:{
     app_name:'Family Location',loading_sub:'Smart family location tracking',
@@ -909,6 +1083,15 @@ const TR = {
     iosInstTitle:'Install on iPhone',iosInstStep1:'Tap the Share button',iosInstStep2:'Choose "Add to Home Screen"',iosInstStep3:'Tap "Add" to confirm',
     androidInstTitle:'Install on Android',androidInstStep1:'Tap ⋮ menu in Chrome',androidInstStep2:'Choose "Add to Home Screen" or "Install App"',androidInstStep3:'Tap "Add" to confirm',
     renameGroup:'Rename Group',renameGroupLbl:'Group name',
+    navChat:'Chat',
+    sosBtn:'SOS',sosActive:'SOS Active!',sosCancel:'SOS Cancelled',sosConfirm:'Send SOS to the whole group?',sosSent:'🆘 SOS sent! Group is being alerted',
+    privQuiet:'Quiet Mode',
+    statusClear:'Clear Status',
+    breadcrumbOn:'Trail active',breadcrumbOff:'Trail off',
+    speedAlert:'High speed detected',
+    historyPrev:'Previous day',historyNext:'Next day',
+    offlineMsg:'Location outdated (offline)',
+    etaLabel:'ETA',
   },
   ru:{
     app_name:'Family Location',loading_sub:'Семейный трекер местоположения',
@@ -956,6 +1139,15 @@ const TR = {
     iosInstTitle:'Установка на iPhone',iosInstStep1:'Нажмите кнопку «Поделиться»',iosInstStep2:'Выберите «На экран Домой»',iosInstStep3:'Нажмите «Добавить»',
     androidInstTitle:'Установка на Android',androidInstStep1:'Нажмите ⋮ меню в Chrome',androidInstStep2:'Выберите «Добавить на главный экран»',androidInstStep3:'Нажмите «Добавить»',
     renameGroup:'Переименовать группу',renameGroupLbl:'Название группы',
+    navChat:'Чат',
+    sosBtn:'SOS',sosActive:'SOS активен!',sosCancel:'SOS отменён',sosConfirm:'Отправить SOS всей группе?',sosSent:'🆘 SOS отправлен! Группа получает оповещение',
+    privQuiet:'Тихий режим',
+    statusClear:'Сбросить статус',
+    breadcrumbOn:'Маршрут активен',breadcrumbOff:'Маршрут выключен',
+    speedAlert:'Высокая скорость',
+    historyPrev:'Предыдущий день',historyNext:'Следующий день',
+    offlineMsg:'Местоположение устарело (офлайн)',
+    etaLabel:'ETA',
   }
 };
 const t = k => (TR[lang]||TR.en)[k] || (TR.en[k]) || k;
@@ -1167,14 +1359,18 @@ function genCode(len) {
 async function initApp() {
   showView('vApp');
   renderUI();
+  loadCachedMembers();
   await loadGroup();
   subLocations();
   subPoints();
   subAdminNotifications();
+  subChat();
+  subSOS();
+  initBattery();
   setTimeout(() => { if(!mapInit) initMap(); }, 300);
   startTracking();
   reqNotifPermQuiet();
-  // Check for a newer version on GitHub (silent, runs in background)
+  renderPrivacyBtn();
   setTimeout(checkForUpdate, 4000);
 }
 
@@ -1183,6 +1379,8 @@ function unsubAll() {
   if (unsubPts)  { unsubPts();  unsubPts  = null; }
   if (unsubGrp)  { unsubGrp();  unsubGrp  = null; }
   if (unsubAdminNotifs) { unsubAdminNotifs(); unsubAdminNotifs = null; }
+  if (unsubChat) { unsubChat(); unsubChat = null; }
+  if (unsubSOS)  { unsubSOS();  unsubSOS  = null; }
 }
 
 // ══════════════════════════════════════════════
@@ -1306,17 +1504,22 @@ function initMap() {
   const el = document.getElementById('map');
   mapObj = L.map(el, { zoomControl: false, attributionControl: false })
     .setView([31.7683, 35.2137], 10);
-  // CartoDB Voyager — clean, readable, shows house numbers at zoom 17+
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  tileLayer = L.tileLayer(isDark ? TILE_DARK : TILE_LIGHT, {
     subdomains: 'abcd',
     maxZoom: 21, maxNativeZoom: 20,
     attribution: '© <a href="https://openstreetmap.org">OSM</a> © <a href="https://carto.com">CARTO</a>'
   }).addTo(mapObj);
   L.control.attribution({ prefix: false }).addTo(mapObj);
-  // Zoom control at bottom-left
   L.control.zoom({ position: 'bottomleft' }).addTo(mapObj);
   mapObj.on('click', onMapClick);
   setTimeout(() => mapObj.invalidateSize(), 200);
+}
+
+function applyMapTheme() {
+  if (!mapObj || !tileLayer) return;
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  tileLayer.setUrl(isDark ? TILE_DARK : TILE_LIGHT);
 }
 
 function onMapClick(e) {
@@ -1502,10 +1705,11 @@ function onPosition(pos) {
   const newLng = pos.coords.longitude;
   const speed  = pos.coords.speed; // m/s or null
 
-  // Motion detection based on GPS speed
   currentMotion = detectMotion(speed);
 
-  // Accumulate daily metrics
+  // Speed alert
+  if (speed && speed > SPEED_ALERT_MS) notifySpeedAlert(speed);
+
   if (myLat !== null) updateMetrics(newLat, newLng, currentMotion);
 
   myLat = newLat;
@@ -1514,6 +1718,7 @@ function onPosition(pos) {
   if (!isHidden) pushLocation(myLat, myLng, currentMotion);
   updateMyMarker(myLat, myLng, pos.coords.accuracy);
   checkGeofencing(myLat, myLng);
+  if (breadcrumbOn) showBreadcrumb();
 }
 
 function detectMotion(speed) {
@@ -1530,12 +1735,21 @@ function onPosErr(err) {
 
 async function pushLocation(lat, lng, motion) {
   if (!me || !groupId) return;
+  // Quiet mode: round coordinates to ~100m precision
+  const pLat = isQuiet ? Math.round(lat * 1000) / 1000 : lat;
+  const pLng = isQuiet ? Math.round(lng * 1000) / 1000 : lng;
+  const payload = {
+    lat: pLat, lng: pLng, uid: me.uid, groupId,
+    name: myProfile?.name || me.email,
+    hidden: isHidden, quiet: isQuiet, motion: motion || null,
+    status: myStatus || null,
+    battery: getBatteryPct(),
+    ts: firebase.firestore.FieldValue.serverTimestamp()
+  };
   try {
-    await db.collection('locations').doc(me.uid).set({
-      lat, lng, uid: me.uid, groupId, name: myProfile?.name || me.email,
-      hidden: isHidden, motion: motion || null,
-      ts: firebase.firestore.FieldValue.serverTimestamp()
-    });
+    await db.collection('locations').doc(me.uid).set(payload);
+    // Cache locally for offline fallback
+    cacheMembers();
   } catch(e) { /* fail silently */ }
 }
 
@@ -1598,14 +1812,34 @@ function updateMemberMarker(uid, data) {
     lng = data.lng + SPREAD * Math.sin(angle);
   }
 
+  const isMoving = motion && motion !== 'still';
+  const movingClass = isMoving ? ' moving' : '';
+  const statusOpt = data.status ? STATUS_OPTIONS.find(s => s.key === data.status) : null;
+  const statusEmoji = statusOpt ? statusOpt.emoji : '';
+  const statusBadge = statusEmoji ? `<div class="status-badge">${statusEmoji}</div>` : '';
   const motionBadge = motionEmoji ? `<div class="mm-motion">${motionEmoji}</div>` : '';
   const icon = L.divIcon({
     className:'', iconSize:[44,44], iconAnchor:[22,22],
-    html:`<div class="mm" style="background:${color}">${initials(name)}${motionBadge}</div>`
+    html:`<div class="mm${movingClass}" style="background:${color}">${initials(name)}${motionBadge}${statusBadge}</div>`
   });
   const ts = data.ts?.toDate ? data.ts.toDate() : null;
   const motionLabel = motion ? ` · ${t('motion'+motion.charAt(0).toUpperCase()+motion.slice(1))||motion}` : '';
-  const popup = `<b>${esc(name)}</b>${motionLabel}<br><small>${ts ? t('lastSeen')+': '+relativeTime(ts) : ''}</small>`;
+  const battPct = (data.battery !== null && data.battery !== undefined) ? ` · 🔋${data.battery}%` : '';
+  // ETA to nearest point when moving
+  const motionSpeeds = { walking:1.4, cycling:4.2, driving:13.9 };
+  let etaStr = '';
+  if (isMoving && points.length) {
+    const spd = motionSpeeds[motion] || 0;
+    const nearestPt = points.reduce((best, p) => {
+      const d = haversine(data.lat, data.lng, p.lat, p.lng);
+      return (!best || d < best.dist) ? {pt:p, dist:d} : best;
+    }, null);
+    if (nearestPt && nearestPt.dist > 50 && nearestPt.dist < 5000 && spd > 0) {
+      const mins = Math.round(nearestPt.dist / spd / 60);
+      if (mins >= 1 && mins <= 120) etaStr = `<br><span class="eta-chip">→ ${esc(nearestPt.pt.name)} ~${mins} ${t('logMins')}</span>`;
+    }
+  }
+  const popup = `<b>${esc(name)}</b>${motionLabel}${battPct}<br><small>${ts ? t('lastSeen')+': '+relativeTime(ts) : ''}</small>${etaStr}`;
 
   if (!memberMarkers[uid]) {
     memberMarkers[uid] = L.marker([lat,lng],{icon}).addTo(mapObj).bindPopup(popup);
@@ -1888,18 +2122,24 @@ function reqNotifPermQuiet() {
 // ══════════════════════════════════════════════
 function switchTab(name) {
   closeToast();
-
-  // Clear route when leaving map tab
   if (name !== 'map' && routeLayer && mapObj) {
     mapObj.removeLayer(routeLayer);
     routeLayer = null;
   }
-  ['map','points','group','metrics','settings'].forEach(n => {
-    document.getElementById('tp-'+n).className = 'tp' + (n===name?' on':'');
-    document.getElementById('nb-'+n).className = 'nb' + (n===name?' on':'');
+  ['map','chat','points','group','metrics','settings'].forEach(n => {
+    const tp = document.getElementById('tp-'+n);
+    const nb = document.getElementById('nb-'+n);
+    if (tp) tp.className = 'tp' + (n===name?' on':'');
+    if (nb) nb.className = 'nb' + (n===name?' on':'');
   });
   if (name === 'map' && mapObj) {
     setTimeout(() => { mapObj.invalidateSize(); syncPointMarkers(); }, 100);
+  }
+  if (name === 'chat') {
+    unreadChat = 0;
+    updateChatBadge();
+    const el = document.getElementById('chatMsgs');
+    if (el) setTimeout(() => el.scrollTop = el.scrollHeight, 100);
   }
   if (name === 'group') renderGroupTab();
   if (name === 'metrics') loadMetrics();
@@ -1931,6 +2171,7 @@ function toggleTheme() {
   theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('theme', theme);
+  applyMapTheme();
   renderSettings();
 }
 
@@ -1963,7 +2204,7 @@ function renderUI() {
   const backs = ['bBackOB','bBackOB2','bObLogout'];
   backs.forEach((id,i) => { const el = document.getElementById(id); if(el) el.textContent = i<2?t('btnBack'):t('btnLogout'); });
   // Nav labels
-  setText('nlMap','navMap'); setText('nlPoints','navPts');
+  setText('nlMap','navMap'); setText('nlPoints','navPts'); setText('nlChat','navChat');
   // Group nav label = cached group name or i18n
   const gnlEl = document.getElementById('nlGroup');
   if (gnlEl) gnlEl.textContent = groupData?.name || localStorage.getItem('fl_grp_name') || t('navGrp');
@@ -2631,6 +2872,294 @@ async function registerPeriodicSync(reg) {
     const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
     if (status.state !== 'granted') return;
     await reg.periodicSync.register('location-update', { minInterval: 60 * 1000 });
+  } catch(e) {}
+}
+
+// ══════════════════════════════════════════════
+//  PRIVACY: cycle visible → quiet → hidden
+// ══════════════════════════════════════════════
+function cyclePrivacy() {
+  const state = isHidden ? 2 : (isQuiet ? 1 : 0);
+  const next = (state + 1) % 3;
+  isHidden = next === 2;
+  isQuiet  = next === 1;
+  renderPrivacyBtn();
+  if (isHidden && myMarker) { mapObj?.removeLayer(myMarker); myMarker = null; }
+  if (myLat) pushLocation(myLat, myLng, currentMotion);
+  const msgs = [t('privOn'), t('privQuiet'), t('privOff')];
+  const types = ['ok', '', 'err'];
+  showToast(msgs[next], types[next]);
+}
+
+function renderPrivacyBtn() {
+  const btn = document.getElementById('privBtn');
+  const ico = document.getElementById('privIco');
+  const lbl = document.getElementById('privLbl');
+  if (!btn || !ico || !lbl) return;
+  if (isHidden)      { ico.textContent='🙈'; lbl.textContent=t('privOff');   btn.className='m-priv no-print hid'; }
+  else if (isQuiet)  { ico.textContent='🤫'; lbl.textContent=t('privQuiet'); btn.className='m-priv no-print quiet'; }
+  else               { ico.textContent='👁️'; lbl.textContent=t('privOn');    btn.className='m-priv no-print'; }
+}
+
+// ══════════════════════════════════════════════
+//  SOS
+// ══════════════════════════════════════════════
+function triggerSOS() {
+  if (!me || !groupId) return;
+  if (sosActive) { cancelSOS(); return; }
+  if (!confirm(t('sosConfirm'))) return;
+  sosActive = true;
+  document.getElementById('tp-map')?.classList.add('sos-active');
+  const sosFab = document.getElementById('sosFab');
+  if (sosFab) sosFab.title = t('sosActive');
+  db.collection('groups').doc(groupId).collection('sos').add({
+    uid: me.uid, name: myProfile?.name || me.email,
+    lat: myLat, lng: myLng,
+    ts: firebase.firestore.FieldValue.serverTimestamp(),
+    active: true
+  }).catch(()=>{});
+  showToastLong(t('sosSent'), 'err');
+}
+
+function cancelSOS() {
+  sosActive = false;
+  document.getElementById('tp-map')?.classList.remove('sos-active');
+  const sosFab = document.getElementById('sosFab');
+  if (sosFab) sosFab.title = '';
+  db.collection('groups').doc(groupId).collection('sos')
+    .where('uid','==',me.uid).where('active','==',true).get()
+    .then(snap => snap.docs.forEach(d => d.ref.update({active:false})))
+    .catch(()=>{});
+  showToast(t('sosCancel'), 'ok');
+}
+
+function subSOS() {
+  if (!groupId) return;
+  if (unsubSOS) { unsubSOS(); unsubSOS = null; }
+  unsubSOS = db.collection('groups').doc(groupId).collection('sos')
+    .where('active','==',true)
+    .onSnapshot(snap => {
+      snap.docChanges().forEach(change => {
+        if (change.type !== 'added') return;
+        const d = change.doc.data();
+        if (d.uid === me.uid) return;
+        showToastLong(`🆘 ${esc(d.name)} ${t('sosSent').split('!')[0]}!`, 'err');
+        if (Notification.permission === 'granted') {
+          new Notification('🆘 SOS!', { body: `${d.name} צריך/ה עזרה!`, icon: './icon.svg' });
+        }
+        if (mapObj && d.lat && d.lng) {
+          const icon = L.divIcon({
+            className:'', iconSize:[46,46], iconAnchor:[23,23],
+            html:`<div class="sos-marker">🆘</div>`
+          });
+          L.marker([d.lat, d.lng], {icon}).addTo(mapObj)
+            .bindPopup(`<b>🆘 SOS</b><br>${esc(d.name)}`).openPopup();
+        }
+      });
+    });
+}
+
+// ══════════════════════════════════════════════
+//  CHAT
+// ══════════════════════════════════════════════
+function subChat() {
+  if (!groupId) return;
+  if (unsubChat) { unsubChat(); unsubChat = null; }
+  unsubChat = db.collection('groups').doc(groupId).collection('chat')
+    .orderBy('ts','asc').limitToLast(100)
+    .onSnapshot(snap => {
+      snap.docChanges().forEach(change => {
+        if (change.type === 'added') {
+          const d = change.doc.data();
+          if (d.uid !== me.uid) {
+            const isChatActive = document.getElementById('tp-chat')?.classList.contains('on');
+            if (!isChatActive) { unreadChat++; updateChatBadge(); }
+          }
+        }
+      });
+      renderChatMessages(snap.docs.map(d => ({id:d.id,...d.data()})));
+    });
+}
+
+function renderChatMessages(msgs) {
+  const el = document.getElementById('chatMsgs');
+  if (!el) return;
+  el.innerHTML = msgs.map(m => {
+    const isMine = m.uid === me.uid;
+    const isSOS  = m.type === 'sos';
+    const ts = m.ts?.toDate ? m.ts.toDate().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
+    const cls = isSOS ? 'msg-bubble msg-sos' : isMine ? 'msg-bubble msg-mine' : 'msg-bubble msg-theirs';
+    return `<div class="${cls}">
+      ${!isMine && !isSOS ? `<div class="msg-name">${esc(m.name||'')}</div>` : ''}
+      ${esc(m.text||'')}
+      <div class="msg-time">${ts}</div>
+    </div>`;
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendChatMsg() {
+  const inp = document.getElementById('chatInput');
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text || !me || !groupId) return;
+  inp.value = '';
+  try {
+    await db.collection('groups').doc(groupId).collection('chat').add({
+      uid: me.uid, name: myProfile?.name || me.email,
+      text, ts: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch(e) { showToast(e.message,'err'); }
+}
+
+function updateChatBadge() {
+  const badge = document.getElementById('chatBadge');
+  if (!badge) return;
+  if (unreadChat > 0) {
+    badge.textContent = unreadChat > 9 ? '9+' : String(unreadChat);
+    badge.hidden = false;
+  } else {
+    badge.hidden = true;
+  }
+}
+
+// ══════════════════════════════════════════════
+//  MANUAL STATUS
+// ══════════════════════════════════════════════
+function toggleStatusPicker() {
+  const picker = document.getElementById('statusPicker');
+  if (!picker) return;
+  if (picker.classList.contains('open')) { picker.classList.remove('open'); return; }
+  picker.innerHTML = STATUS_OPTIONS.map(s => {
+    const lbl = s.label[lang] || s.label.he;
+    return `<div class="status-item ${myStatus===s.key?'active':''}" onclick="setStatus('${s.key}','${s.emoji}','${lbl}')">
+      <span>${s.emoji}</span><span>${lbl}</span>
+    </div>`;
+  }).join('') + `<div class="status-item" onclick="setStatus(null,'🟢','')">
+    <span>🟢</span><span>${t('statusClear')}</span>
+  </div>`;
+  picker.classList.add('open');
+}
+
+function setStatus(key, emoji, label) {
+  myStatus = key;
+  const ico = document.getElementById('statusIco');
+  if (ico) ico.textContent = emoji || '🟢';
+  document.getElementById('statusPicker')?.classList.remove('open');
+  if (myLat) pushLocation(myLat, myLng, currentMotion);
+  showToast(emoji + (label ? ' '+label : ''), 'ok');
+}
+
+document.addEventListener('click', e => {
+  const picker = document.getElementById('statusPicker');
+  const btn = document.getElementById('statusBtn');
+  if (picker && btn && !picker.contains(e.target) && !btn.contains(e.target)) {
+    picker.classList.remove('open');
+  }
+});
+
+// ══════════════════════════════════════════════
+//  BREADCRUMB TRAIL
+// ══════════════════════════════════════════════
+function toggleBreadcrumb() {
+  breadcrumbOn = !breadcrumbOn;
+  const btn = document.getElementById('bcBtn');
+  if (btn) {
+    btn.style.background = breadcrumbOn ? 'var(--primary)' : 'var(--card)';
+    btn.style.color      = breadcrumbOn ? '#fff' : 'var(--text)';
+  }
+  if (breadcrumbOn) {
+    showToast(t('breadcrumbOn'), 'ok');
+    showBreadcrumb();
+  } else {
+    if (breadcrumbLayer) { mapObj?.removeLayer(breadcrumbLayer); breadcrumbLayer = null; }
+    showToast(t('breadcrumbOff'), '');
+  }
+}
+
+function showBreadcrumb() {
+  if (!mapObj || !breadcrumbOn) return;
+  if (breadcrumbLayer) { mapObj.removeLayer(breadcrumbLayer); breadcrumbLayer = null; }
+  const pts = trackPoints.slice(-60);
+  if (pts.length < 2) return;
+  breadcrumbLayer = L.layerGroup().addTo(mapObj);
+  pts.forEach((p, i) => {
+    const opacity = 0.25 + (i / pts.length) * 0.75;
+    const r = i === pts.length - 1 ? 5 : 3;
+    L.circleMarker([p.lat, p.lng], {
+      radius: r, color: '#1a73e8', fillColor: '#1a73e8',
+      fillOpacity: opacity, weight: 1.5, opacity: opacity
+    }).addTo(breadcrumbLayer);
+  });
+}
+
+// ══════════════════════════════════════════════
+//  BATTERY
+// ══════════════════════════════════════════════
+async function initBattery() {
+  if (!('getBattery' in navigator)) return;
+  try {
+    myBattery = await navigator.getBattery();
+    myBattery.addEventListener('levelchange', () => {
+      if (myLat) pushLocation(myLat, myLng, currentMotion);
+    });
+  } catch(e) {}
+}
+
+function getBatteryPct() {
+  return myBattery ? Math.round(myBattery.level * 100) : null;
+}
+
+// ══════════════════════════════════════════════
+//  SPEED ALERT
+// ══════════════════════════════════════════════
+function notifySpeedAlert(speed) {
+  const now = Date.now();
+  if (now - lastSpeedAlert < 60000) return;
+  lastSpeedAlert = now;
+  const kmh = Math.round(speed * 3.6);
+  showToastLong(`🚨 ${t('speedAlert')} · ${kmh} km/h`, 'err');
+  if (groupData?.adminUid && groupData.adminUid !== me.uid) {
+    db.collection('adminNotifs').add({
+      groupId, adminUid: groupData.adminUid,
+      type: 'speed', memberUid: me.uid,
+      memberName: myProfile?.name || me.email,
+      speed: kmh, lat: myLat, lng: myLng,
+      ts: firebase.firestore.FieldValue.serverTimestamp(),
+      seen: false
+    }).catch(()=>{});
+  }
+}
+
+// ══════════════════════════════════════════════
+//  7-DAY HISTORY NAVIGATION
+// ══════════════════════════════════════════════
+function shiftMetricsDate(days) {
+  const picker = document.getElementById('metDatePicker');
+  if (!picker) return;
+  const current = picker.value || new Date().toISOString().slice(0,10);
+  const d = new Date(current);
+  d.setDate(d.getDate() + days);
+  const newDate = d.toISOString().slice(0,10);
+  const today = new Date().toISOString().slice(0,10);
+  if (newDate > today) return;
+  picker.value = newDate;
+  loadMetrics();
+}
+
+// ══════════════════════════════════════════════
+//  OFFLINE CACHE
+// ══════════════════════════════════════════════
+function cacheMembers() {
+  if (!groupId || !Object.keys(members).length) return;
+  try { localStorage.setItem(`fl_members_${groupId}`, JSON.stringify(members)); } catch(e) {}
+}
+
+function loadCachedMembers() {
+  if (!groupId) return;
+  try {
+    const raw = localStorage.getItem(`fl_members_${groupId}`);
+    if (raw) Object.assign(members, JSON.parse(raw));
   } catch(e) {}
 }
 
