@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "1.6.0";
+const APP_VERSION        = "1.6.1";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -409,13 +409,15 @@ button{font-family:inherit;cursor:pointer}
 /* ════════════ TOAST ════════════ */
 #toast{
   position:fixed;bottom:calc(var(--nav)+16px);left:50%;
-  transform:translateX(-50%) translateY(120px);
+  transform:translateX(-50%) translateY(140px);
+  opacity:0;pointer-events:none;
   background:#333;color:#fff;padding:11px 16px 11px 20px;border-radius:999px;
   font-size:14px;font-weight:600;z-index:8000;
-  transition:transform .3s ease;white-space:normal;word-break:break-word;
+  transition:transform .35s ease, opacity .35s ease;
+  white-space:normal;word-break:break-word;
   max-width:calc(100vw - 40px);display:flex;align-items:center;gap:10px;
 }
-#toast.show{transform:translateX(-50%) translateY(0)}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:auto}
 #toast.ok{background:#1b5e20}
 #toast.err{background:var(--red)}
 .toast-x{background:none;border:none;color:inherit;font-size:20px;line-height:1;cursor:pointer;opacity:.75;padding:0;flex-shrink:0}
@@ -2027,7 +2029,7 @@ function showToast(msg, type='', duration=3000) {
 function closeToast() {
   clearTimeout(toastTimer);
   const el = document.getElementById('toast');
-  if (el) el.className = '';
+  if (el) el.classList.remove('show');
 }
 function showToastLong(msg, type='') { showToast(msg, type, 8000); }
 
