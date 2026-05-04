@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.0.0";
+const APP_VERSION        = "2.0.1";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -157,8 +157,11 @@ button{font-family:inherit;cursor:pointer}
 /* ════════════ MAP ════════════ */
 #tp-map{padding:0}
 #map{width:100%;height:100%}
+#map-top-right{
+  position:absolute;top:12px;right:12px;z-index:1001;
+  display:flex;gap:6px;align-items:center;
+}
 .m-priv{
-  position:absolute;top:12px;right:12px;z-index:1000;
   background:var(--card);border:none;border-radius:10px;padding:8px 14px;
   font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;
   box-shadow:var(--shadow);display:flex;align-items:center;gap:6px;color:var(--text);
@@ -535,7 +538,7 @@ select.lang-sel{
 
 /* ════════════ STATUS PICKER ════════════ */
 .status-picker{
-  position:absolute;top:52px;right:12px;z-index:1002;
+  position:absolute;top:58px;right:12px;z-index:1002;
   background:var(--card);border-radius:12px;padding:6px;box-shadow:var(--shadow);
   display:none;flex-direction:column;gap:4px;min-width:150px;
 }
@@ -546,7 +549,6 @@ select.lang-sel{
 }
 .status-item:hover,.status-item.active{background:var(--bg3)}
 .status-btn{
-  position:absolute;top:12px;right:72px;z-index:1000;
   background:var(--card);border:none;border-radius:10px;padding:7px 12px;
   font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;
   box-shadow:var(--shadow);display:flex;align-items:center;gap:6px;color:var(--text);
@@ -556,12 +558,6 @@ select.lang-sel{
 .eta-chip{
   background:var(--primary);color:#fff;border-radius:8px;
   padding:3px 8px;font-size:11px;font-weight:700;display:inline-block;margin-top:4px;
-}
-
-/* ════════════ BREADCRUMB ════════════ */
-.bc-dot{
-  width:10px;height:10px;border-radius:50%;border:2px solid #fff;
-  box-shadow:0 1px 3px rgba(0,0,0,.4);
 }
 
 /* ════════════ BATTERY ════════════ */
@@ -683,14 +679,15 @@ select.lang-sel{
     <!-- MAP -->
     <div class="tp on" id="tp-map">
       <div id="map"></div>
-      <!-- Privacy/Quiet cycle btn top-right -->
-      <button class="m-priv no-print" id="privBtn" onclick="cyclePrivacy()">
-        <span id="privIco">👁️</span><span id="privLbl"></span>
-      </button>
-      <!-- Status picker (right of privacy btn) -->
-      <button class="status-btn no-print" id="statusBtn" onclick="toggleStatusPicker()">
-        <span id="statusIco">🟢</span>
-      </button>
+      <!-- Top-right: status + privacy in one flex row (no overlap) -->
+      <div id="map-top-right" class="no-print">
+        <button class="status-btn" id="statusBtn" onclick="toggleStatusPicker()">
+          <span id="statusIco">🟢</span>
+        </button>
+        <button class="m-priv" id="privBtn" onclick="cyclePrivacy()">
+          <span id="privIco">👁️</span><span id="privLbl"></span>
+        </button>
+      </div>
       <div class="status-picker no-print" id="statusPicker"></div>
       <!-- Member/group selector top-left -->
       <div class="m-sel no-print" id="memberSel" style="top:56px">
@@ -710,10 +707,6 @@ select.lang-sel{
           style="width:42px;height:42px;border-radius:50%;border:none;
                  background:var(--green);color:#fff;font-size:22px;font-weight:900;cursor:pointer;
                  box-shadow:0 3px 10px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center">＋</button>
-        <button onclick="toggleBreadcrumb()" id="bcBtn" title="מסלול breadcrumb"
-          style="width:42px;height:42px;border-radius:50%;border:none;
-                 background:var(--card);color:var(--text);font-size:18px;cursor:pointer;
-                 box-shadow:0 3px 10px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center">🐾</button>
       </div>
       <!-- SOS button -->
       <button class="sos-fab no-print" id="sosFab" onclick="triggerSOS()">🆘</button>
@@ -944,13 +937,12 @@ let myStatus      = null;
 let isQuiet       = false;
 let tileLayer     = null;
 let sosActive     = false;
-let breadcrumbLayer = null;
-let breadcrumbOn  = false;
 let unsubChat     = null;
 let unsubSOS      = null;
 let unreadChat    = 0;
 let myBattery     = null;
 let lastSpeedAlert = 0;
+let metricsRefreshInterval = null;
 const SPEED_ALERT_MS = 33;   // m/s ≈ 120 km/h
 const TILE_LIGHT = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 const TILE_DARK  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
@@ -1332,8 +1324,11 @@ async function doJoinGroup() {
     if (q.empty) { showToast(t('errJoin'),'err'); return; }
     const grpDoc = q.docs[0];
     groupId = grpDoc.id;
+    const existingMembers = grpDoc.data().members || [];
     await db.collection('groups').doc(groupId).update({
-      members: firebase.firestore.FieldValue.arrayUnion(me.uid)
+      members: firebase.firestore.FieldValue.arrayUnion(me.uid),
+      // Auto-approve: all current members can see the new member by default
+      [`permissions.${me.uid}`]: existingMembers
     });
     await db.collection('users').doc(me.uid).set({
       groupId,
@@ -1439,7 +1434,8 @@ function renderGroupTab() {
     const isAdm = uid === groupData.adminUid;
     const lastSeen = m.ts ? relativeTime(m.ts.toDate ? m.ts.toDate() : new Date(m.ts)) : '';
     // Only admin sees delete button, and can't delete themselves
-    const delBtn = (isAdmin && !isMe) ? `<button class="small-btn del" onclick="removeMember('${uid}')">✕</button>` : '';
+    const delBtn  = (isAdmin && !isMe) ? `<button class="small-btn del" onclick="removeMember('${uid}')">✕</button>` : '';
+    const permBtn = isAdmin ? `<button class="small-btn" onclick="openMemberPermissions('${uid}')" title="הרשאות">🔒</button>` : '';
     memsEl.innerHTML += `
       <div class="mc">
         <div class="mav" style="background:${color}">${initials(name)}</div>
@@ -1447,7 +1443,7 @@ function renderGroupTab() {
           <div class="mn">${esc(name)} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''} ${isAdm?'<span class="badge bdg-a">'+t('admin')+'</span>':''}</div>
           <div class="ms">${lastSeen ? t('lastSeen')+': '+lastSeen : ''}</div>
         </div>
-        ${delBtn}
+        <div style="display:flex;gap:4px">${permBtn}${delBtn}</div>
       </div>`;
   });
 
@@ -1457,13 +1453,14 @@ function renderGroupTab() {
 function renderPermissions() {
   if (!groupData) return;
   const perms = groupData.permissions || {};
-  const myPerms = perms[me.uid] || [];  // UIDs who are ALLOWED to see me
+  const rawPerms = perms[me.uid]; // undefined = all allowed (default)
   const el = document.getElementById('permsList');
   el.innerHTML = '';
   (groupData.members || []).filter(uid => uid !== me.uid).forEach(uid => {
     const m = members[uid] || {};
     const name = m.name || uid.slice(0,8);
-    const checked = myPerms.includes(uid);
+    // Empty/undefined list means everyone is allowed → show as checked
+    const checked = !rawPerms || rawPerms.length === 0 || rawPerms.includes(uid);
     el.innerHTML += `
       <div class="perm-row">
         <div style="width:36px;height:36px;border-radius:50%;background:${colorForUid(uid)};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0">${initials(name)}</div>
@@ -1479,11 +1476,51 @@ function renderPermissions() {
 
 async function togglePerm(targetUid, allow) {
   const perms = groupData?.permissions || {};
-  const myList = [...(perms[me.uid] || [])];
+  // If no list yet, initialise with all OTHER members (default-all-allowed state)
+  const allOthers = (groupData.members || []).filter(u => u !== me.uid);
+  const myList = perms[me.uid] ? [...perms[me.uid]] : [...allOthers];
   if (allow) { if (!myList.includes(targetUid)) myList.push(targetUid); }
   else { const i = myList.indexOf(targetUid); if (i > -1) myList.splice(i,1); }
   await db.collection('groups').doc(groupId).update({
     [`permissions.${me.uid}`]: myList
+  });
+}
+
+// Admin opens a modal to manage who can see a specific member
+function openMemberPermissions(targetUid) {
+  if (groupData?.adminUid !== me.uid) return;
+  const perms = groupData.permissions || {};
+  const rawPerms = perms[targetUid];
+  const targetName = members[targetUid]?.name || targetUid.slice(0,8);
+  const others = (groupData.members || []).filter(u => u !== targetUid);
+  const rows = others.map(uid => {
+    const name = members[uid]?.name || uid.slice(0,8);
+    const checked = !rawPerms || rawPerms.length === 0 || rawPerms.includes(uid);
+    return `<div class="perm-row">
+      <div style="width:36px;height:36px;border-radius:50%;background:${colorForUid(uid)};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0">${initials(name)}</div>
+      <span class="perm-name">${esc(name)}</span>
+      <label class="sw">
+        <input type="checkbox" ${checked?'checked':''} onchange="togglePermAdmin('${targetUid}','${uid}',this.checked)">
+        <span class="sw-sl"></span>
+      </label>
+    </div>`;
+  }).join('');
+  openModal(`
+    <div class="mttl">🔒 ${esc(targetName)}</div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:14px">${t('permDesc')}</p>
+    ${rows || '<div style="text-align:center;padding:12px;color:var(--text2)">–</div>'}
+    <button class="btn btn-s mt16" onclick="closeModal()">${t('cancel')}</button>
+  `);
+}
+
+async function togglePermAdmin(targetUid, viewerUid, allow) {
+  const perms = groupData?.permissions || {};
+  const allOthers = (groupData.members || []).filter(u => u !== targetUid);
+  const list = perms[targetUid] ? [...perms[targetUid]] : [...allOthers];
+  if (allow) { if (!list.includes(viewerUid)) list.push(viewerUid); }
+  else { const i = list.indexOf(viewerUid); if (i > -1) list.splice(i,1); }
+  await db.collection('groups').doc(groupId).update({
+    [`permissions.${targetUid}`]: list
   });
 }
 
@@ -1504,8 +1541,7 @@ function initMap() {
   const el = document.getElementById('map');
   mapObj = L.map(el, { zoomControl: false, attributionControl: false })
     .setView([31.7683, 35.2137], 10);
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  tileLayer = L.tileLayer(isDark ? TILE_DARK : TILE_LIGHT, {
+  tileLayer = L.tileLayer(TILE_LIGHT, {
     subdomains: 'abcd',
     maxZoom: 21, maxNativeZoom: 20,
     attribution: '© <a href="https://openstreetmap.org">OSM</a> © <a href="https://carto.com">CARTO</a>'
@@ -1718,7 +1754,6 @@ function onPosition(pos) {
   if (!isHidden) pushLocation(myLat, myLng, currentMotion);
   updateMyMarker(myLat, myLng, pos.coords.accuracy);
   checkGeofencing(myLat, myLng);
-  if (breadcrumbOn) showBreadcrumb();
 }
 
 function detectMotion(speed) {
@@ -1823,7 +1858,8 @@ function updateMemberMarker(uid, data) {
     html:`<div class="mm${movingClass}" style="background:${color}">${initials(name)}${motionBadge}${statusBadge}</div>`
   });
   const ts = data.ts?.toDate ? data.ts.toDate() : null;
-  const motionLabel = motion ? ` · ${t('motion'+motion.charAt(0).toUpperCase()+motion.slice(1))||motion}` : '';
+  const MOTION_TR = {still:'motionStill',walking:'motionWalk',cycling:'motionCycle',driving:'motionDrive'};
+  const motionLabel = motion ? ` · ${t(MOTION_TR[motion])||motion}` : '';
   const battPct = (data.battery !== null && data.battery !== undefined) ? ` · 🔋${data.battery}%` : '';
   // ETA to nearest point when moving
   const motionSpeeds = { walking:1.4, cycling:4.2, driving:13.9 };
@@ -2142,7 +2178,14 @@ function switchTab(name) {
     if (el) setTimeout(() => el.scrollTop = el.scrollHeight, 100);
   }
   if (name === 'group') renderGroupTab();
-  if (name === 'metrics') loadMetrics();
+  if (name === 'metrics') {
+    loadMetrics();
+    if (!metricsRefreshInterval) {
+      metricsRefreshInterval = setInterval(loadLocationLog, 120000); // refresh log every 2 min
+    }
+  } else {
+    if (metricsRefreshInterval) { clearInterval(metricsRefreshInterval); metricsRefreshInterval = null; }
+  }
   if (name === 'settings') renderSettings();
 }
 
@@ -2171,7 +2214,6 @@ function toggleTheme() {
   theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('theme', theme);
-  applyMapTheme();
   renderSettings();
 }
 
@@ -2423,8 +2465,8 @@ async function updateMetrics(lat, lng, motion) {
 
   // ── Track point for daily route ──
   trackPoints.push({ lat, lng, ts: now, motion: motion||'still' });
-  // Save track every 5 points to Firestore (batch)
-  if (trackPoints.length % 5 === 0) {
+  // Save track every 2 points to Firestore (batch)
+  if (trackPoints.length % 2 === 0) {
     const docId = `${groupId}_${me.uid}_${today}`;
     db.collection('tracks').doc(docId).set({
       uid: me.uid, groupId, date: today,
@@ -2516,11 +2558,14 @@ async function loadMetrics() {
         const steps = m.steps || 0;
         const isMe = m.uid === me.uid;
         const canRoute = isAdmin || isMe;
+        const batt = members[m.uid]?.battery;
+        const battChip = batt !== null && batt !== undefined
+          ? `<span class="batt-chip">🔋${batt}%</span>` : '';
         el.innerHTML += `
           <div class="metric-card">
             <div class="metric-av" style="background:${color}">${initials(m.name||'?')}</div>
             <div style="flex:1">
-              <div class="metric-name">${esc(m.name||'?')} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''}</div>
+              <div class="metric-name">${esc(m.name||'?')} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''}${battChip}</div>
               <div class="metric-row">
                 <div class="metric-val">🏃 <b>${km}</b> ${t('metKm')}</div>
                 ${steps>0?`<div class="metric-val">👟 <b>${steps.toLocaleString()}</b> ${t('metSteps')}</div>`:''}
@@ -2559,7 +2604,8 @@ async function loadLocationLog() {
     return `${Math.floor(m/60)}ש' ${m%60}ד'`;
   };
   const motionIcon = m => ({ still:'🔵', walking:'🚶', cycling:'🚴', driving:'🚗' }[m] || '⚫');
-  const motionHe   = m => ({ still:'עמד', walking:'הלך', cycling:'אופניים', driving:'נסע' }[m] || m);
+  const MKEYS = {still:'motionStill',walking:'motionWalk',cycling:'motionCycle',driving:'motionDrive'};
+  const motionLbl  = m => t(MKEYS[m]) || m;
 
   // Helper: find nearest saved point within 20m — use its name as address
   const nearestPoint = (lat, lng) => {
@@ -2608,8 +2654,14 @@ async function loadLocationLog() {
     for (let i = 0; i < trackDocs.length; i++) {
       const doc = trackDocs[i];
       const uid = uidsToLoad[i];
-      if (!doc.exists || !doc.data().points?.length) continue;
-      const rawPts = doc.data().points.sort((a,b) => a.ts - b.ts);
+      let rawPts = (doc.exists && doc.data().points?.length) ? [...doc.data().points] : [];
+      // Merge local trackPoints for today (current user only)
+      if (uid === me.uid && selectedDate === today) {
+        const savedTs = new Set(rawPts.map(p => p.ts));
+        const localNew = trackPoints.filter(p => !savedTs.has(p.ts));
+        rawPts = [...rawPts, ...localNew];
+      }
+      rawPts.sort((a,b) => a.ts - b.ts);
       if (rawPts.length < 2) continue;
       hasData = true;
       const name = doc.data().name || uid.slice(0,6);
@@ -2636,7 +2688,7 @@ async function loadLocationLog() {
           startTs: rawPts[startIdx].ts,
           endTs: rawPts[endIdx].ts,
           lat: anchorPt.lat, lng: anchorPt.lng,
-          isOngoing: Date.now() - rawPts[endIdx].ts < 120000
+          isOngoing: Date.now() - rawPts[endIdx].ts < 300000
         });
       };
 
@@ -2654,14 +2706,14 @@ async function loadLocationLog() {
       const rowsHtml = [];
       for (const seg of segs) {
         const isNow = seg.isOngoing;
-        const endStr = isNow ? 'עכשיו' : fmt(seg.endTs);
+        const endStr = isNow ? t('now') : fmt(seg.endTs);
         const dur = durStr(seg.endTs - seg.startTs);
         const addr = await getAddr(seg.lat, seg.lng);
         const ico = motionIcon(seg.motion);
-        const lbl = motionHe(seg.motion);
+        const lbl = motionLbl(seg.motion);
         rowsHtml.push(`
           <tr style="border-top:1px solid var(--border);cursor:pointer" onclick="switchTab('map');flyToPoint(${seg.lat},${seg.lng})">
-            <td style="padding:9px 12px;font-weight:600;white-space:nowrap">${fmt(seg.startTs)} – ${endStr}</td>
+            <td style="padding:9px 12px;font-weight:600;white-space:nowrap;direction:ltr;text-align:left">${fmt(seg.startTs)} – ${endStr}</td>
             <td style="padding:9px 12px">${ico} ${lbl}</td>
             <td style="padding:9px 12px;color:var(--text2);white-space:nowrap">${dur}</td>
             <td style="padding:9px 12px;font-size:11px;color:var(--text2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(addr)}</td>
@@ -2828,13 +2880,17 @@ function updateMyMarker(lat, lng, accuracy) {
     className:'', iconSize:[44,44], iconAnchor:[22,22],
     html:`<div class="mm" style="background:${color}">${initials(name)}${motionBadge}</div>`
   });
+  const battPct = getBatteryPct();
+  const battStr = battPct !== null ? ` · 🔋${battPct}%` : '';
+  const popup = `<b>${esc(name)}</b> ${t('me')}${battStr}`;
   if (!myMarker) {
     myMarker = L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(mapObj)
-      .bindPopup(`<b>${esc(name)}</b> ${t('me')}`);
+      .bindPopup(popup);
     mapObj.setView([lat,lng],14);
   } else {
     myMarker.setLatLng([lat,lng]);
     myMarker.setIcon(icon);
+    myMarker.setPopupContent(popup);
   }
   if (myAccCircle) mapObj.removeLayer(myAccCircle);
   myAccCircle = L.circle([lat,lng],{radius:accuracy,color:'#1a73e8',fillColor:'#1a73e8',fillOpacity:0.08,weight:1}).addTo(mapObj);
@@ -3057,41 +3113,6 @@ document.addEventListener('click', e => {
     picker.classList.remove('open');
   }
 });
-
-// ══════════════════════════════════════════════
-//  BREADCRUMB TRAIL
-// ══════════════════════════════════════════════
-function toggleBreadcrumb() {
-  breadcrumbOn = !breadcrumbOn;
-  const btn = document.getElementById('bcBtn');
-  if (btn) {
-    btn.style.background = breadcrumbOn ? 'var(--primary)' : 'var(--card)';
-    btn.style.color      = breadcrumbOn ? '#fff' : 'var(--text)';
-  }
-  if (breadcrumbOn) {
-    showToast(t('breadcrumbOn'), 'ok');
-    showBreadcrumb();
-  } else {
-    if (breadcrumbLayer) { mapObj?.removeLayer(breadcrumbLayer); breadcrumbLayer = null; }
-    showToast(t('breadcrumbOff'), '');
-  }
-}
-
-function showBreadcrumb() {
-  if (!mapObj || !breadcrumbOn) return;
-  if (breadcrumbLayer) { mapObj.removeLayer(breadcrumbLayer); breadcrumbLayer = null; }
-  const pts = trackPoints.slice(-60);
-  if (pts.length < 2) return;
-  breadcrumbLayer = L.layerGroup().addTo(mapObj);
-  pts.forEach((p, i) => {
-    const opacity = 0.25 + (i / pts.length) * 0.75;
-    const r = i === pts.length - 1 ? 5 : 3;
-    L.circleMarker([p.lat, p.lng], {
-      radius: r, color: '#1a73e8', fillColor: '#1a73e8',
-      fillOpacity: opacity, weight: 1.5, opacity: opacity
-    }).addTo(breadcrumbLayer);
-  });
-}
 
 // ══════════════════════════════════════════════
 //  BATTERY
