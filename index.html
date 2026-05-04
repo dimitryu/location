@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.0.1";
+const APP_VERSION        = "2.0.2";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -562,6 +562,75 @@ select.lang-sel{
 
 /* ════════════ BATTERY ════════════ */
 .batt-chip{font-size:11px;color:var(--text2);margin-top:2px}
+
+/* ════════════ SOS BANNER ════════════ */
+#sos-banner{
+  display:none;position:fixed;top:0;left:0;right:0;z-index:9100;
+  background:#c62828;color:#fff;padding:10px 16px;
+  font-size:14px;font-weight:700;text-align:center;
+}
+@keyframes sosBannerPulse{0%,100%{background:#c62828}50%{background:#7f0000}}
+#sos-banner.active{display:block;animation:sosBannerPulse 1.2s ease-in-out infinite}
+.sos-banner-row{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}
+.sos-banner-close{background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:6px;
+  padding:3px 10px;cursor:pointer;font-family:inherit;font-weight:700;font-size:13px}
+
+/* SOS double-tap confirm ring */
+.sos-confirm-ring{
+  position:absolute;inset:-6px;border-radius:50%;
+  border:3px solid #fff;animation:sosRing .6s linear infinite;pointer-events:none;
+}
+@keyframes sosRing{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.5)}}
+
+/* ════════════ CHAT DM ════════════ */
+.msg-dm{border:2px solid var(--primary)!important}
+.msg-dm-badge{
+  font-size:10px;background:var(--primary);color:#fff;
+  border-radius:4px;padding:1px 5px;margin-bottom:3px;display:inline-block;
+}
+.chat-to-bar{
+  display:flex;align-items:center;gap:8px;padding:6px 12px;
+  border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;
+}
+.chat-to-lbl{font-size:12px;font-weight:700;color:var(--text2);white-space:nowrap}
+.chat-to-sel{
+  flex:1;border:1px solid var(--border);border-radius:8px;padding:5px 8px;
+  font-family:inherit;font-size:13px;background:var(--card);color:var(--text);
+}
+
+/* ════════════ NOTIFICATIONS BADGE ════════════ */
+.notif-badge{
+  background:var(--red);color:#fff;border-radius:50%;
+  width:18px;height:18px;font-size:10px;font-weight:900;
+  display:inline-flex;align-items:center;justify-content:center;
+  position:absolute;top:-4px;right:-4px;
+}
+.notif-item{
+  padding:10px 14px;border-bottom:1px solid var(--border);
+  display:flex;flex-direction:column;gap:3px;
+}
+.notif-item:last-child{border-bottom:none}
+.notif-time{font-size:11px;color:var(--text2)}
+
+/* ════════════ GROUP COLLAPSE ════════════ */
+.grp-section-hdr{
+  display:flex;align-items:center;gap:8px;padding:10px 14px;
+  background:var(--bg3);border-radius:10px;cursor:pointer;
+  font-weight:700;font-size:14px;margin-bottom:6px;user-select:none;
+}
+.grp-section-hdr .arr{transition:transform .2s;display:inline-block}
+.grp-section-hdr.collapsed .arr{transform:rotate(180deg)}
+.grp-section-body{overflow:hidden;transition:max-height .3s ease}
+
+/* ════════════ LOG MEMBER SELECTOR ════════════ */
+.log-member-bar{
+  display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;
+}
+.log-member-bar label{font-size:12px;font-weight:700;color:var(--text2)}
+.log-member-sel{
+  border:1px solid var(--border);border-radius:8px;padding:5px 10px;
+  font-family:inherit;font-size:13px;background:var(--card);color:var(--text);
+}
 </style>
 </head>
 <body>
@@ -708,8 +777,8 @@ select.lang-sel{
                  background:var(--green);color:#fff;font-size:22px;font-weight:900;cursor:pointer;
                  box-shadow:0 3px 10px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center">＋</button>
       </div>
-      <!-- SOS button -->
-      <button class="sos-fab no-print" id="sosFab" onclick="triggerSOS()">🆘</button>
+      <!-- SOS button — double-tap protection -->
+      <button class="sos-fab no-print" id="sosFab" onclick="triggerSOS()">🆘<span id="sosRing" hidden class="sos-confirm-ring"></span></button>
       <!-- Add point hint -->
       <div class="add-hint no-print" id="addHint" hidden>
         <span id="addHintTxt"></span>
@@ -720,6 +789,12 @@ select.lang-sel{
     <!-- CHAT -->
     <div class="tp" id="tp-chat" style="flex-direction:column">
       <div class="chat-msgs" id="chatMsgs"></div>
+      <div class="chat-to-bar">
+        <span class="chat-to-lbl" id="chatToLbl">→</span>
+        <select class="chat-to-sel" id="chatToSel" onchange="setChatTo(this.value)">
+          <option value="">כולם</option>
+        </select>
+      </div>
       <div class="chat-input-bar">
         <textarea class="chat-input" id="chatInput" rows="1" placeholder="הודעה..."
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMsg()}"></textarea>
@@ -765,6 +840,10 @@ select.lang-sel{
         </div>
         <div id="metList"></div>
         <div class="sec-h" id="logTitleEl" style="margin-top:16px"></div>
+        <div id="logMemberBar" class="log-member-bar" style="display:none">
+          <label id="logMemberLbl"></label>
+          <select class="log-member-sel" id="logMemberSel" onchange="onLogMemberChange(this.value)"></select>
+        </div>
         <div id="logList"></div>
       </div>
     </div>
@@ -852,6 +931,11 @@ select.lang-sel{
     </div>
 
   </div><!-- /tc -->
+
+  <!-- SOS persistent banner (shown to all recipients while SOS is active) -->
+  <div id="sos-banner">
+    <div class="sos-banner-row" id="sosBannerContent"></div>
+  </div>
 
   <!-- Bottom nav -->
   <nav id="bnav" class="no-print">
@@ -943,6 +1027,15 @@ let unreadChat    = 0;
 let myBattery     = null;
 let lastSpeedAlert = 0;
 let metricsRefreshInterval = null;
+let lastBatteryAlertPct = 100;
+let sosTapCount = 0;
+let sosTapTimer = null;
+let chatToUid = null;
+let activeSosBanners = {};
+let unsubNotifs = null;
+let myGroupsList = [];
+let metricsGroupsCollapsed = {};
+let logViewUid = null;
 const SPEED_ALERT_MS = 33;   // m/s ≈ 120 km/h
 const TILE_LIGHT = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 const TILE_DARK  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
@@ -1028,6 +1121,12 @@ const TR = {
     historyPrev:'יום קודם',historyNext:'יום הבא',
     offlineMsg:'מיקום לא עדכני (אופליין)',
     etaLabel:'ETA',
+    battLow:'סוללה נמוכה',battLowMsg:'סוללה נמוכה',
+    notifHistory:'היסטוריית התראות',noNotifs:'אין התראות',
+    dmAll:'כולם',dmLabel:'פרטי',myGroups:'הקבוצות שלי',addGroup:'הוסף קבוצה',
+    sosTapConfirm:'לחץ שוב לשליחת SOS',logMember:'תנועות של:',
+    collapseOpen:'פתח',collapseClose:'סגור',notifBell:'התראות',
+    switchGrp:'החלף',createNewGrp:'צור קבוצה חדשה',joinNewGrp:'הצטרף לקבוצה נוספת',
   },
   en:{
     app_name:'Family Location',loading_sub:'Smart family location tracking',
@@ -1084,6 +1183,12 @@ const TR = {
     historyPrev:'Previous day',historyNext:'Next day',
     offlineMsg:'Location outdated (offline)',
     etaLabel:'ETA',
+    battLow:'Low battery',battLowMsg:'Low battery',
+    notifHistory:'Notification History',noNotifs:'No notifications',
+    dmAll:'Everyone',dmLabel:'Private',myGroups:'My Groups',addGroup:'Add Group',
+    sosTapConfirm:'Tap again to send SOS',logMember:'Movement of:',
+    collapseOpen:'Open',collapseClose:'Close',notifBell:'Alerts',
+    switchGrp:'Switch',createNewGrp:'Create new group',joinNewGrp:'Join another group',
   },
   ru:{
     app_name:'Family Location',loading_sub:'Семейный трекер местоположения',
@@ -1140,6 +1245,12 @@ const TR = {
     historyPrev:'Предыдущий день',historyNext:'Следующий день',
     offlineMsg:'Местоположение устарело (офлайн)',
     etaLabel:'ETA',
+    battLow:'Низкий заряд',battLowMsg:'Низкий заряд',
+    notifHistory:'История уведомлений',noNotifs:'Нет уведомлений',
+    dmAll:'Всем',dmLabel:'Личное',myGroups:'Мои группы',addGroup:'Добавить группу',
+    sosTapConfirm:'Нажмите ещё раз для SOS',logMember:'Движение:',
+    collapseOpen:'Открыть',collapseClose:'Закрыть',notifBell:'Уведомления',
+    switchGrp:'Переключить',createNewGrp:'Создать новую группу',joinNewGrp:'Вступить в ещё одну',
   }
 };
 const t = k => (TR[lang]||TR.en)[k] || (TR.en[k]) || k;
@@ -1361,6 +1472,7 @@ async function initApp() {
   subAdminNotifications();
   subChat();
   subSOS();
+  subNotifications();
   initBattery();
   setTimeout(() => { if(!mapInit) initMap(); }, 300);
   startTracking();
@@ -1375,7 +1487,10 @@ function unsubAll() {
   if (unsubGrp)  { unsubGrp();  unsubGrp  = null; }
   if (unsubAdminNotifs) { unsubAdminNotifs(); unsubAdminNotifs = null; }
   if (unsubChat) { unsubChat(); unsubChat = null; }
-  if (unsubSOS)  { unsubSOS();  unsubSOS  = null; }
+  if (unsubSOS)    { unsubSOS();    unsubSOS    = null; }
+  if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
+  activeSosBanners = {};
+  updateSOSBanner();
 }
 
 // ══════════════════════════════════════════════
@@ -1385,6 +1500,16 @@ async function loadGroup() {
   if (!groupId) return;
   const snap = await db.collection('groups').doc(groupId).get();
   groupData = snap.data();
+  // Load all groups this user belongs to (for switcher)
+  const allGroupIds = myProfile?.groups || [groupId];
+  if (allGroupIds.length > 1) {
+    const grpSnaps = await Promise.all(
+      allGroupIds.map(gid => db.collection('groups').doc(gid).get())
+    );
+    myGroupsList = grpSnaps.map(s => ({ id: s.id, name: s.exists ? (s.data().name || s.id) : s.id }));
+  } else {
+    myGroupsList = [{ id: groupId, name: groupData?.name || groupId }];
+  }
   renderGroupTab();
   // Subscribe to live group updates (permissions)
   if (unsubGrp) unsubGrp();
@@ -1408,6 +1533,32 @@ function renderGroupTab() {
   const myGroups = myProfile?.groups || [groupId];
   const multiGroup = myGroups.length > 1;
 
+  // Build "my groups" section
+  let myGroupsHtml = '';
+  if (myGroupsList.length > 1) {
+    const rows = myGroupsList.map(g => {
+      const isActive = g.id === groupId;
+      return `<div class="mc" style="${isActive?'background:var(--primary);color:#fff;border-radius:10px':''}">
+        <span style="flex:1;font-weight:700;font-size:14px;padding:4px 0">${esc(g.name)}</span>
+        ${isActive
+          ? `<span class="badge bdg-p" style="background:#fff;color:var(--primary)">${t('me')}</span>`
+          : `<button class="small-btn" onclick="switchToGroup('${g.id}')">${t('switchGrp')}</button>`}
+      </div>`;
+    }).join('');
+    myGroupsHtml = `
+      <div class="sec-h" style="margin-top:16px">${t('myGroups')}</div>
+      ${rows}
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="small-btn" style="flex:1" onclick="showAddGroupModal('create')">➕ ${t('createNewGrp')}</button>
+        <button class="small-btn" style="flex:1" onclick="showAddGroupModal('join')">🔗 ${t('joinNewGrp')}</button>
+      </div>`;
+  } else {
+    myGroupsHtml = `<div style="display:flex;gap:8px;margin-top:10px">
+      <button class="small-btn" style="flex:1" onclick="showAddGroupModal('create')">➕ ${t('createNewGrp')}</button>
+      <button class="small-btn" style="flex:1" onclick="showAddGroupModal('join')">🔗 ${t('joinNewGrp')}</button>
+    </div>`;
+  }
+
   document.getElementById('grpInfoCard').innerHTML = `
     <div class="card">
       <div class="ci" style="cursor:default">
@@ -1418,11 +1569,12 @@ function renderGroupTab() {
         </div>
         <div style="display:flex;gap:6px">
           ${isAdmin ? `<button class="small-btn" onclick="openRenameGroup()" title="${t('renameGroup')}">✏️</button>` : ''}
-          ${multiGroup ? `<button class="small-btn" onclick="showGroupSwitcher()">🔄</button>` : ''}
+          <button class="small-btn" onclick="openNotifHistory()">🔔</button>
           <button class="small-btn" onclick="showGroupCode()">#${esc(groupData.joinCode||'')}</button>
         </div>
       </div>
-    </div>`;
+    </div>
+    ${myGroupsHtml}`;
 
   const memsEl = document.getElementById('grpMembers');
   memsEl.innerHTML = '';
@@ -1522,6 +1674,81 @@ async function togglePermAdmin(targetUid, viewerUid, allow) {
   await db.collection('groups').doc(groupId).update({
     [`permissions.${targetUid}`]: list
   });
+}
+
+async function switchToGroup(gid) {
+  if (gid === groupId) return;
+  closeModal();
+  unsubAll();
+  groupId = gid;
+  groupData = null;
+  members = {};
+  await db.collection('users').doc(me.uid).update({ groupId: gid }).catch(()=>{});
+  await initApp();
+}
+
+function showAddGroupModal(mode) {
+  const isCreate = mode === 'create';
+  openModal(`
+    <div class="mttl">${isCreate ? ('➕ ' + t('createNewGrp')) : ('🔗 ' + t('joinNewGrp'))}</div>
+    ${isCreate
+      ? `<div class="fg"><label class="fl">${t('grpName')}</label>
+           <input class="fi" type="text" id="mGrpName" maxlength="40"></div>
+         <button class="btn btn-g mt16" onclick="doCreateGroupModal()">${t('btnCreate')}</button>`
+      : `<div class="fg">
+           <input class="fi" type="text" id="mJoinCode" maxlength="8"
+             style="text-align:center;letter-spacing:4px;font-size:22px;text-transform:uppercase"
+             placeholder="XXXXXXXX" oninput="this.value=this.value.toUpperCase()">
+         </div>
+         <button class="btn btn-p mt16" onclick="doJoinGroupModal()">${t('btnJoin')}</button>`}
+    <button class="btn btn-s mt16" onclick="closeModal()">${t('cancel')}</button>
+  `);
+}
+
+async function doCreateGroupModal() {
+  const name = (document.getElementById('mGrpName')?.value.trim()) || (myProfile?.name + "'s Group");
+  const code = genCode(8);
+  try {
+    const gRef = db.collection('groups').doc();
+    const newGid = gRef.id;
+    await gRef.set({
+      name, adminUid: me.uid, members: [me.uid],
+      joinCode: code, permissions: {}, createdAt: new Date()
+    });
+    await db.collection('joinCodes').doc(code).set({ groupId: newGid, createdAt: new Date() });
+    await db.collection('users').doc(me.uid).set({
+      groupId: newGid, groups: firebase.firestore.FieldValue.arrayUnion(newGid)
+    }, { merge: true });
+    myProfile = (await db.collection('users').doc(me.uid).get()).data();
+    closeModal();
+    confetti();
+    showToast(t('okCreate'), 'ok');
+    await switchToGroup(newGid);
+  } catch(e) { showToast(e.message, 'err'); }
+}
+
+async function doJoinGroupModal() {
+  const code = document.getElementById('mJoinCode')?.value.trim().toUpperCase();
+  if (!code || code.length < 4) return;
+  try {
+    const q = await db.collection('groups').where('joinCode','==',code).limit(1).get();
+    if (q.empty) { showToast(t('errJoin'), 'err'); return; }
+    const grpDoc = q.docs[0];
+    const newGid = grpDoc.id;
+    const existingMembers = grpDoc.data().members || [];
+    await db.collection('groups').doc(newGid).update({
+      members: firebase.firestore.FieldValue.arrayUnion(me.uid),
+      [`permissions.${me.uid}`]: existingMembers
+    });
+    await db.collection('users').doc(me.uid).set({
+      groupId: newGid, groups: firebase.firestore.FieldValue.arrayUnion(newGid)
+    }, { merge: true });
+    myProfile = (await db.collection('users').doc(me.uid).get()).data();
+    closeModal();
+    confetti();
+    showToast(t('okJoin'), 'ok');
+    await switchToGroup(newGid);
+  } catch(e) { showToast(e.message, 'err'); }
 }
 
 async function removeMember(uid) {
@@ -2531,9 +2758,41 @@ async function saveLocationLog(lat, lng, startTs, endTs) {
   }).catch(()=>{});
 }
 
+function renderMetricCard(m, isAdmin) {
+  const color = colorForUid(m.uid);
+  const km = (m.distance || 0).toFixed(2);
+  const steps = m.steps || 0;
+  const isMe = m.uid === me.uid;
+  const canRoute = isAdmin || isMe;
+  const batt = members[m.uid]?.battery;
+  const battChip = batt !== null && batt !== undefined
+    ? `<span class="batt-chip">🔋${batt}%</span>` : '';
+  return `<div class="metric-card">
+    <div class="metric-av" style="background:${color}">${initials(m.name||'?')}</div>
+    <div style="flex:1">
+      <div class="metric-name">${esc(m.name||'?')} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''}${battChip}</div>
+      <div class="metric-row">
+        <div class="metric-val">🏃 <b>${km}</b> ${t('metKm')}</div>
+        ${steps>0?`<div class="metric-val">👟 <b>${steps.toLocaleString()}</b> ${t('metSteps')}</div>`:''}
+      </div>
+      ${canRoute ? `<div class="metric-btns">
+        <button class="small-btn" onclick="showDailyRoute('${m.uid}','${esc(m.name||'')}','${colorForUid(m.uid)}')">🗺️ ${t('showRoute')}</button>
+      </div>` : ''}
+    </div>
+  </div>`;
+}
+
+function toggleMetricsGroup(gid) {
+  metricsGroupsCollapsed[gid] = !metricsGroupsCollapsed[gid];
+  const body = document.getElementById('mg-body-' + gid);
+  const hdr = document.getElementById('mg-hdr-' + gid);
+  if (!body || !hdr) return;
+  body.style.display = metricsGroupsCollapsed[gid] ? 'none' : '';
+  hdr.classList.toggle('collapsed', !!metricsGroupsCollapsed[gid]);
+}
+
 async function loadMetrics() {
   const el = document.getElementById('metList');
-  // Use date picker or default to today
   const picker = document.getElementById('metDatePicker');
   const today = new Date().toISOString().slice(0,10);
   if (picker && !picker.value) picker.value = today;
@@ -2542,46 +2801,46 @@ async function loadMetrics() {
   setText('logTitleEl','logTitle');
   if (!el || !groupId) return;
   el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2)">⏳</div>';
+  const isAdmin = groupData?.adminUid === me.uid;
+
+  // Multi-group: load metrics for each group the user belongs to
+  const groupsToLoad = myGroupsList.length > 1 ? myGroupsList : [{ id: groupId, name: groupData?.name || '' }];
+  const multiGrp = groupsToLoad.length > 1;
+
+  el.innerHTML = '';
   try {
-    const snap = await db.collection('metrics')
-      .where('groupId','==',groupId).where('date','==',selectedDate).get();
-    const isAdmin = groupData?.adminUid === me.uid;
-    el.innerHTML = '';
-    if (snap.empty) {
-      el.innerHTML = `<div class="empty"><div class="ei">📊</div><div class="et">${t('metNoData')}</div></div>`;
-    } else {
+    for (const grp of groupsToLoad) {
+      const snap = await db.collection('metrics')
+        .where('groupId','==',grp.id).where('date','==',selectedDate).get();
+      const grpIsAdmin = grp.id === groupId ? isAdmin : false;
+
+      let cardsHtml = '';
       snap.docs.forEach(d => {
         const m = d.data();
-        if (!isAdmin && m.uid !== me.uid) return;
-        const color = colorForUid(m.uid);
-        const km = (m.distance || 0).toFixed(2);
-        const steps = m.steps || 0;
-        const isMe = m.uid === me.uid;
-        const canRoute = isAdmin || isMe;
-        const batt = members[m.uid]?.battery;
-        const battChip = batt !== null && batt !== undefined
-          ? `<span class="batt-chip">🔋${batt}%</span>` : '';
-        el.innerHTML += `
-          <div class="metric-card">
-            <div class="metric-av" style="background:${color}">${initials(m.name||'?')}</div>
-            <div style="flex:1">
-              <div class="metric-name">${esc(m.name||'?')} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''}${battChip}</div>
-              <div class="metric-row">
-                <div class="metric-val">🏃 <b>${km}</b> ${t('metKm')}</div>
-                ${steps>0?`<div class="metric-val">👟 <b>${steps.toLocaleString()}</b> ${t('metSteps')}</div>`:''}
-              </div>
-              ${canRoute ? `<div class="metric-btns">
-                <button class="small-btn" onclick="showDailyRoute('${m.uid}','${esc(m.name||'')}','${colorForUid(m.uid)}')">🗺️ ${t('showRoute')}</button>
-              </div>` : ''}
-            </div>
-          </div>`;
+        if (!grpIsAdmin && m.uid !== me.uid) return;
+        cardsHtml += renderMetricCard(m, grpIsAdmin);
       });
-      if (!el.innerHTML) {
-        el.innerHTML = `<div class="empty"><div class="ei">📊</div><div class="et">${t('metNoData')}</div></div>`;
+      if (!cardsHtml) cardsHtml = `<div style="text-align:center;padding:14px;color:var(--text2)">${t('metNoData')}</div>`;
+
+      if (multiGrp) {
+        const collapsed = !!metricsGroupsCollapsed[grp.id];
+        el.innerHTML += `
+          <div id="mg-hdr-${grp.id}" class="grp-section-hdr${collapsed?' collapsed':''}"
+               onclick="toggleMetricsGroup('${grp.id}')">
+            <span style="flex:1">👥 ${esc(grp.name)}</span>
+            <span class="arr">▲</span>
+          </div>
+          <div id="mg-body-${grp.id}" style="${collapsed?'display:none':''}">
+            ${cardsHtml}
+          </div>`;
+      } else {
+        el.innerHTML += cardsHtml;
       }
     }
+    if (!el.innerHTML) {
+      el.innerHTML = `<div class="empty"><div class="ei">📊</div><div class="et">${t('metNoData')}</div></div>`;
+    }
   } catch(e) { el.innerHTML = '<div style="padding:20px;color:var(--red)">'+e.message+'</div>'; }
-  // Load location log
   await loadLocationLog();
 }
 
@@ -2641,9 +2900,31 @@ async function loadLocationLog() {
     return addrCache[key] || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
   };
 
+  // Show member selector for admin
+  const isAdmin = groupData?.adminUid === me.uid;
+  const logBar = document.getElementById('logMemberBar');
+  const logSel = document.getElementById('logMemberSel');
+  const logLbl = document.getElementById('logMemberLbl');
+  if (isAdmin && logBar && logSel) {
+    logBar.style.display = 'flex';
+    if (logLbl) logLbl.textContent = t('logMember');
+    const allMembers = groupData?.members || [];
+    if (logSel.options.length !== allMembers.length + 1) {
+      logSel.innerHTML = `<option value="">${t('dmAll')}</option>`;
+      allMembers.forEach(uid => {
+        const name = members[uid]?.name || uid.slice(0,8);
+        logSel.innerHTML += `<option value="${uid}">${esc(name)}</option>`;
+      });
+    }
+    logSel.value = logViewUid || '';
+  } else if (logBar) {
+    logBar.style.display = 'none';
+  }
+
   try {
-    const isAdmin = groupData?.adminUid === me.uid;
-    const uidsToLoad = isAdmin ? (groupData?.members || [me.uid]) : [me.uid];
+    const uidsToLoad = isAdmin
+      ? (logViewUid ? [logViewUid] : (groupData?.members || [me.uid]))
+      : [me.uid];
     const trackDocs = await Promise.all(
       uidsToLoad.map(uid => db.collection('tracks').doc(`${groupId}_${uid}_${selectedDate}`).get())
     );
@@ -2962,18 +3243,37 @@ function renderPrivacyBtn() {
 // ══════════════════════════════════════════════
 function triggerSOS() {
   if (!me || !groupId) return;
+  // Cancel if already active
   if (sosActive) { cancelSOS(); return; }
-  if (!confirm(t('sosConfirm'))) return;
+  // Double-tap protection: first tap arms, second tap within 3s fires
+  if (sosTapCount === 0) {
+    sosTapCount = 1;
+    const ring = document.getElementById('sosRing');
+    if (ring) ring.hidden = false;
+    showToast(t('sosTapConfirm'), 'err');
+    sosTapTimer = setTimeout(() => {
+      sosTapCount = 0;
+      if (ring) ring.hidden = true;
+    }, 3000);
+    return;
+  }
+  // Second tap — actually send
+  clearTimeout(sosTapTimer);
+  sosTapCount = 0;
+  const ring = document.getElementById('sosRing');
+  if (ring) ring.hidden = true;
   sosActive = true;
   document.getElementById('tp-map')?.classList.add('sos-active');
   const sosFab = document.getElementById('sosFab');
   if (sosFab) sosFab.title = t('sosActive');
+  const myName = myProfile?.name || me.email;
   db.collection('groups').doc(groupId).collection('sos').add({
-    uid: me.uid, name: myProfile?.name || me.email,
+    uid: me.uid, name: myName,
     lat: myLat, lng: myLng,
     ts: firebase.firestore.FieldValue.serverTimestamp(),
     active: true
   }).catch(()=>{});
+  saveGroupNotification('sos', myName, `🆘 SOS — ${myName}`, null);
   showToastLong(t('sosSent'), 'err');
 }
 
@@ -2996,13 +3296,23 @@ function subSOS() {
     .where('active','==',true)
     .onSnapshot(snap => {
       snap.docChanges().forEach(change => {
-        if (change.type !== 'added') return;
+        const docId = change.doc.id;
         const d = change.doc.data();
+        if (change.type === 'removed' || (change.type === 'modified' && !d.active)) {
+          delete activeSosBanners[docId];
+          updateSOSBanner();
+          return;
+        }
+        if (change.type !== 'added') return;
         if (d.uid === me.uid) return;
-        showToastLong(`🆘 ${esc(d.name)} ${t('sosSent').split('!')[0]}!`, 'err');
+        // Add to persistent banner
+        activeSosBanners[docId] = { name: d.name, uid: d.uid };
+        updateSOSBanner();
+        // Device notification
         if (Notification.permission === 'granted') {
           new Notification('🆘 SOS!', { body: `${d.name} צריך/ה עזרה!`, icon: './icon.svg' });
         }
+        // Map marker
         if (mapObj && d.lat && d.lng) {
           const icon = L.divIcon({
             className:'', iconSize:[46,46], iconAnchor:[23,23],
@@ -3012,7 +3322,37 @@ function subSOS() {
             .bindPopup(`<b>🆘 SOS</b><br>${esc(d.name)}`).openPopup();
         }
       });
+      // On full snapshot (first load), rebuild banner from all active docs
+      activeSosBanners = {};
+      snap.docs.forEach(doc => {
+        const d = doc.data();
+        if (d.active && d.uid !== me.uid) {
+          activeSosBanners[doc.id] = { name: d.name, uid: d.uid };
+        }
+      });
+      updateSOSBanner();
     });
+}
+
+function updateSOSBanner() {
+  const banner = document.getElementById('sos-banner');
+  const content = document.getElementById('sosBannerContent');
+  if (!banner || !content) return;
+  const entries = Object.values(activeSosBanners);
+  if (entries.length === 0) {
+    banner.classList.remove('active');
+    content.innerHTML = '';
+    return;
+  }
+  banner.classList.add('active');
+  content.innerHTML = entries.map(e =>
+    `<span>🆘 <b>${esc(e.name)}</b> צריך/ה עזרה!</span>`
+  ).join(' · ') + `<button class="sos-banner-close" onclick="dismissSOSBanner()">✕ הסתר</button>`;
+}
+
+function dismissSOSBanner() {
+  const banner = document.getElementById('sos-banner');
+  if (banner) banner.classList.remove('active');
 }
 
 // ══════════════════════════════════════════════
@@ -3027,26 +3367,54 @@ function subChat() {
       snap.docChanges().forEach(change => {
         if (change.type === 'added') {
           const d = change.doc.data();
-          if (d.uid !== me.uid) {
+          // Count unread only for messages visible to me
+          const visibleToMe = !d.toUid || d.toUid === me.uid || d.uid === me.uid;
+          if (d.uid !== me.uid && visibleToMe) {
             const isChatActive = document.getElementById('tp-chat')?.classList.contains('on');
             if (!isChatActive) { unreadChat++; updateChatBadge(); }
           }
         }
       });
       renderChatMessages(snap.docs.map(d => ({id:d.id,...d.data()})));
+      updateChatToSelector();
     });
+}
+
+function setChatTo(uid) {
+  chatToUid = uid || null;
+}
+
+function updateChatToSelector() {
+  const sel = document.getElementById('chatToSel');
+  if (!sel || !groupData) return;
+  sel.innerHTML = `<option value="">${t('dmAll')}</option>`;
+  (groupData.members || []).filter(u => u !== me.uid).forEach(uid => {
+    const name = members[uid]?.name || uid.slice(0,8);
+    sel.innerHTML += `<option value="${uid}">${esc(name)}</option>`;
+  });
+  sel.value = chatToUid || '';
+  const lbl = document.getElementById('chatToLbl');
+  if (lbl) lbl.textContent = '→';
 }
 
 function renderChatMessages(msgs) {
   const el = document.getElementById('chatMsgs');
   if (!el) return;
-  el.innerHTML = msgs.map(m => {
+  el.innerHTML = msgs.filter(m => {
+    // Show: broadcast (no toUid), sent by me, or sent to me
+    if (!m.toUid) return true;
+    return m.uid === me.uid || m.toUid === me.uid;
+  }).map(m => {
     const isMine = m.uid === me.uid;
     const isSOS  = m.type === 'sos';
+    const isDM   = !!m.toUid;
     const ts = m.ts?.toDate ? m.ts.toDate().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
-    const cls = isSOS ? 'msg-bubble msg-sos' : isMine ? 'msg-bubble msg-mine' : 'msg-bubble msg-theirs';
+    const dmClass = isDM ? ' msg-dm' : '';
+    const cls = isSOS ? 'msg-bubble msg-sos' : isMine ? `msg-bubble msg-mine${dmClass}` : `msg-bubble msg-theirs${dmClass}`;
+    const dmBadge = isDM ? `<div class="msg-dm-badge">${t('dmLabel')} ${isMine ? '→ '+esc(members[m.toUid]?.name||'') : ''}</div>` : '';
     return `<div class="${cls}">
       ${!isMine && !isSOS ? `<div class="msg-name">${esc(m.name||'')}</div>` : ''}
+      ${dmBadge}
       ${esc(m.text||'')}
       <div class="msg-time">${ts}</div>
     </div>`;
@@ -3060,11 +3428,13 @@ async function sendChatMsg() {
   const text = inp.value.trim();
   if (!text || !me || !groupId) return;
   inp.value = '';
+  const payload = {
+    uid: me.uid, name: myProfile?.name || me.email,
+    text, ts: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  if (chatToUid) payload.toUid = chatToUid;
   try {
-    await db.collection('groups').doc(groupId).collection('chat').add({
-      uid: me.uid, name: myProfile?.name || me.email,
-      text, ts: firebase.firestore.FieldValue.serverTimestamp()
-    });
+    await db.collection('groups').doc(groupId).collection('chat').add(payload);
   } catch(e) { showToast(e.message,'err'); }
 }
 
@@ -3123,12 +3493,99 @@ async function initBattery() {
     myBattery = await navigator.getBattery();
     myBattery.addEventListener('levelchange', () => {
       if (myLat) pushLocation(myLat, myLng, currentMotion);
+      checkBatteryLowAlert();
     });
+    lastBatteryAlertPct = getBatteryPct() ?? 100;
   } catch(e) {}
+}
+
+function checkBatteryLowAlert() {
+  const pct = getBatteryPct();
+  if (pct === null) return;
+  if (pct <= 10 && lastBatteryAlertPct > 10 && groupId) {
+    const myName = myProfile?.name || me?.email || '?';
+    const msg = `🔋 ${myName} — ${t('battLow')} (${pct}%)`;
+    showToastLong(msg, 'err');
+    saveGroupNotification('batteryLow', myName, msg, null);
+    if (groupData?.adminUid && groupData.adminUid !== me.uid) {
+      db.collection('adminNotifs').add({
+        groupId, adminUid: groupData.adminUid,
+        type: 'batteryLow', memberUid: me.uid,
+        memberName: myName, battery: pct,
+        ts: firebase.firestore.FieldValue.serverTimestamp(), seen: false
+      }).catch(()=>{});
+    }
+  }
+  lastBatteryAlertPct = pct;
 }
 
 function getBatteryPct() {
   return myBattery ? Math.round(myBattery.level * 100) : null;
+}
+
+// ══════════════════════════════════════════════
+//  NOTIFICATIONS HISTORY
+// ══════════════════════════════════════════════
+function saveGroupNotification(type, fromName, msg, toUid) {
+  if (!groupId || !me) return;
+  db.collection('groups').doc(groupId).collection('notifications').add({
+    type, fromUid: me.uid, fromName,
+    toUid: toUid || null,
+    msg, ts: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(()=>{});
+}
+
+function subNotifications() {
+  if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
+  if (!groupId) return;
+  unsubNotifs = db.collection('groups').doc(groupId).collection('notifications')
+    .orderBy('ts','desc').limitToLast(50)
+    .onSnapshot(snap => {
+      snap.docChanges().forEach(change => {
+        if (change.type !== 'added') return;
+        const d = change.doc.data();
+        if (d.fromUid === me.uid) return;
+        if (d.type === 'batteryLow') {
+          showToastLong(d.msg, 'err');
+          if (Notification.permission === 'granted') {
+            new Notification('🔋 ' + t('battLow'), { body: d.msg, icon: './icon.svg' });
+          }
+        }
+      });
+      updateNotifBell();
+    });
+}
+
+function updateNotifBell() {
+  const bellBadge = document.getElementById('notifBellBadge');
+  if (!bellBadge) return;
+}
+
+async function openNotifHistory() {
+  if (!groupId) return;
+  const isAdmin = groupData?.adminUid === me.uid;
+  let q = db.collection('groups').doc(groupId).collection('notifications')
+    .orderBy('ts','desc').limit(60);
+  const snap = await q.get().catch(() => null);
+  if (!snap) return;
+  const rows = snap.docs.map(d => {
+    const n = d.data();
+    // Non-admin sees only broadcast (toUid=null) or messages to them
+    if (!isAdmin && n.toUid && n.toUid !== me.uid && n.fromUid !== me.uid) return '';
+    const ts = n.ts?.toDate ? n.ts.toDate().toLocaleString([], {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    const typeIcon = n.type==='sos'?'🆘':n.type==='batteryLow'?'🔋':n.type==='speed'?'🚨':n.type==='arrival'?'📍':'🔔';
+    return `<div class="notif-item">
+      <div style="font-weight:700">${typeIcon} ${esc(n.msg||'')}</div>
+      <div class="notif-time">${esc(n.fromName||'')} · ${ts}</div>
+    </div>`;
+  }).join('');
+  openModal(`
+    <div class="mttl">🔔 ${t('notifHistory')}</div>
+    <div style="max-height:60vh;overflow-y:auto;margin:0 -20px">
+      ${rows || `<div style="text-align:center;padding:24px;color:var(--text2)">${t('noNotifs')}</div>`}
+    </div>
+    <button class="btn btn-s mt16" onclick="closeModal()">${t('cancel')}</button>
+  `);
 }
 
 // ══════════════════════════════════════════════
@@ -3139,17 +3596,24 @@ function notifySpeedAlert(speed) {
   if (now - lastSpeedAlert < 60000) return;
   lastSpeedAlert = now;
   const kmh = Math.round(speed * 3.6);
+  const myName = myProfile?.name || me.email;
   showToastLong(`🚨 ${t('speedAlert')} · ${kmh} km/h`, 'err');
+  saveGroupNotification('speed', myName, `🚨 ${myName} — ${t('speedAlert')} (${kmh} km/h)`, null);
   if (groupData?.adminUid && groupData.adminUid !== me.uid) {
     db.collection('adminNotifs').add({
       groupId, adminUid: groupData.adminUid,
       type: 'speed', memberUid: me.uid,
-      memberName: myProfile?.name || me.email,
+      memberName: myName,
       speed: kmh, lat: myLat, lng: myLng,
       ts: firebase.firestore.FieldValue.serverTimestamp(),
       seen: false
     }).catch(()=>{});
   }
+}
+
+function onLogMemberChange(uid) {
+  logViewUid = uid || null;
+  loadLocationLog();
 }
 
 // ══════════════════════════════════════════════
