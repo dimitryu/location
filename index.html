@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.0.4";
+const APP_VERSION        = "2.0.5";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -907,7 +907,7 @@ select.lang-sel{
 
         <div class="sg">
           <div class="sl" id="sGrpLbl"></div>
-          <div class="si" onclick="showGroupCode()">
+          <div class="si" onclick="showAllGroupCodes()">
             <span class="si-ico">🔗</span>
             <span class="si-txt" id="sCode"></span>
           </div>
@@ -1029,6 +1029,8 @@ let lastSpeedAlert = 0;
 let metricsRefreshInterval = null;
 let allGroupsData = {};    // gid → groupDoc data (all groups user belongs to)
 let locationUnsubs = [];   // per-UID location listeners
+let sosUnsubs = [];        // per-group SOS listeners
+let mapGroupFilter = null; // null = all groups, gid = show only that group
 let lastBatteryAlertPct = 100;
 let sosTapCount = 0;
 let sosTapTimer = null;
@@ -1129,6 +1131,8 @@ const TR = {
     sosTapConfirm:'לחץ שוב לשליחת SOS',logMember:'תנועות של:',
     collapseOpen:'פתח',collapseClose:'סגור',notifBell:'התראות',
     switchGrp:'החלף',createNewGrp:'צור קבוצה חדשה',joinNewGrp:'הצטרף לקבוצה נוספת',
+    navGrps:'קבוצות',allGroups:'כל הקבוצות',filterByGroup:'סנן לפי קבוצה',
+    sosYouSent:'🆘 שלחת SOS — לחץ שוב לביטול',inviteCodes:'קודי הצטרפות',
   },
   en:{
     app_name:'Family Location',loading_sub:'Smart family location tracking',
@@ -1191,6 +1195,8 @@ const TR = {
     sosTapConfirm:'Tap again to send SOS',logMember:'Movement of:',
     collapseOpen:'Open',collapseClose:'Close',notifBell:'Alerts',
     switchGrp:'Switch',createNewGrp:'Create new group',joinNewGrp:'Join another group',
+    navGrps:'Groups',allGroups:'All groups',filterByGroup:'Filter by group',
+    sosYouSent:'🆘 You sent SOS — tap again to cancel',inviteCodes:'Invite codes',
   },
   ru:{
     app_name:'Family Location',loading_sub:'Семейный трекер местоположения',
@@ -1253,6 +1259,8 @@ const TR = {
     sosTapConfirm:'Нажмите ещё раз для SOS',logMember:'Движение:',
     collapseOpen:'Открыть',collapseClose:'Закрыть',notifBell:'Уведомления',
     switchGrp:'Переключить',createNewGrp:'Создать новую группу',joinNewGrp:'Вступить в ещё одну',
+    navGrps:'Группы',allGroups:'Все группы',filterByGroup:'Фильтр по группе',
+    sosYouSent:'🆘 Вы отправили SOS — нажмите снова для отмены',inviteCodes:'Коды приглашений',
   }
 };
 const t = k => (TR[lang]||TR.en)[k] || (TR.en[k]) || k;
@@ -1542,7 +1550,7 @@ async function loadGroup() {
           groupData = s.data();
           if (groupData?.name) localStorage.setItem('fl_grp_name', groupData.name);
           const gnlEl = document.getElementById('nlGroup');
-          if (gnlEl) gnlEl.textContent = groupData?.name || t('navGrp');
+          if (gnlEl) gnlEl.textContent = t('navGrps');
           const selEl = document.getElementById('selName');
           if (selEl && !focusedMember) selEl.textContent = groupData?.name || '';
         }
@@ -1586,7 +1594,7 @@ function renderGroupTab() {
     let memsHtml = '';
     (gd.members || [me.uid]).forEach(uid => {
       const m = members[uid] || {};
-      const name = m.name || uid.slice(0,8);
+      const name = (uid === me.uid ? myProfile?.name : null) || m.name || uid.slice(0,8);
       const color = colorForUid(uid);
       const isMe = uid === me.uid;
       const isAdmMem = uid === gd.adminUid;
@@ -2137,6 +2145,14 @@ function updateMemberMarker(uid, data) {
     return;
   }
 
+  if (mapGroupFilter) {
+    const inGroup = (allGroupsData[mapGroupFilter]?.members || []).includes(uid);
+    if (!inGroup) {
+      if (memberMarkers[uid]) { mapObj.removeLayer(memberMarkers[uid]); delete memberMarkers[uid]; }
+      return;
+    }
+  }
+
   const color = colorForUid(uid);
   const name = data.name || uid.slice(0,6);
   const motion = data.motion || null;
@@ -2327,6 +2343,34 @@ function showGroupCode() {
     <div class="code-box" onclick="copyCode('${code}')">${code}</div>
     <p style="text-align:center;font-size:12px;color:var(--text2);margin-top:8px">👆 ${t('codeSub').split('·')[1]||''}</p>
     <button class="btn btn-p mt16" onclick="copyCode('${code}')">${t('codeCopied').replace('!','')} 📋</button>
+    <button class="btn btn-s" style="margin-top:8px" onclick="closeModal()">${t('cancel')}</button>
+  `);
+}
+
+function showAllGroupCodes() {
+  const gids = Object.keys(allGroupsData);
+  const groups = gids.length > 0
+    ? gids.map(gid => ({ gid, gd: allGroupsData[gid] }))
+    : groupData ? [{ gid: groupId, gd: groupData }] : [];
+
+  if (!groups.length) { showToast(t('errNoGroup'), 'err'); return; }
+
+  const rows = groups.map(({ gid, gd }) => {
+    const code = gd.joinCode || '';
+    const isAdmin = gd.adminUid === me?.uid;
+    return `
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px">
+          ${esc(gd.name || gid.slice(0,8))}${isAdmin ? ' 👑' : ''}
+        </div>
+        <div class="code-box" onclick="copyCode('${code}')" style="font-size:20px;cursor:pointer">${code}</div>
+      </div>`;
+  }).join('');
+
+  openModal(`
+    <div class="mttl">${t('inviteCodes')}</div>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:14px">${t('codeSub')}</p>
+    ${rows}
     <button class="btn btn-s" style="margin-top:8px" onclick="closeModal()">${t('cancel')}</button>
   `);
 }
@@ -2588,9 +2632,8 @@ function renderUI() {
   backs.forEach((id,i) => { const el = document.getElementById(id); if(el) el.textContent = i<2?t('btnBack'):t('btnLogout'); });
   // Nav labels
   setText('nlMap','navMap'); setText('nlPoints','navPts'); setText('nlChat','navChat');
-  // Group nav label = cached group name or i18n
   const gnlEl = document.getElementById('nlGroup');
-  if (gnlEl) gnlEl.textContent = groupData?.name || localStorage.getItem('fl_grp_name') || t('navGrp');
+  if (gnlEl) gnlEl.textContent = t('navGrps');
   setText('nlMetrics','navMet'); setText('nlSettings','navSet');
   // Points tab
   setText('ptTitle','ptTitle');
@@ -3211,12 +3254,32 @@ async function showDailyRoute(uid, name, color) {
 // ══════════════════════════════════════════════
 //  MEMBER SELECTOR
 // ══════════════════════════════════════════════
-function toggleMemberSel() {
+function buildMemberSelDrop() {
   const drop = document.getElementById('selDrop');
   if (!drop) return;
-  // Build list
-  const arr = Object.entries(members).filter(([uid,d]) => !d.hidden);
-  drop.innerHTML = `
+  const gids = Object.keys(allGroupsData);
+  const hasMultipleGroups = gids.length > 1;
+
+  let groupFilterHtml = '';
+  if (hasMultipleGroups) {
+    groupFilterHtml = `<div style="padding:6px 8px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap">
+      <button class="small-btn${!mapGroupFilter ? ' active' : ''}" onclick="setMapGroupFilter(null)">${t('allGroups')}</button>
+      ${gids.map(gid => {
+        const gd = allGroupsData[gid];
+        return `<button class="small-btn${mapGroupFilter === gid ? ' active' : ''}" onclick="setMapGroupFilter('${gid}')">${esc(gd.name || gid.slice(0,6))}</button>`;
+      }).join('')}
+    </div>`;
+  }
+
+  const visibleUids = mapGroupFilter
+    ? (allGroupsData[mapGroupFilter]?.members || []).filter(u => u !== me?.uid)
+    : Object.keys(members).filter(u => u !== me?.uid);
+
+  const arr = visibleUids
+    .filter(uid => members[uid] && !members[uid].hidden)
+    .map(uid => [uid, members[uid]]);
+
+  drop.innerHTML = groupFilterHtml + `
     <div class="m-sel-item" onclick="selectMember(null)">
       <div class="m-sel-dot" style="background:var(--primary)"></div>
       <span>${t('allMembers')}</span>
@@ -3229,7 +3292,21 @@ function toggleMemberSel() {
         <span>${esc(name)}</span>
       </div>`;
     }).join('');
+}
+
+function toggleMemberSel() {
+  const drop = document.getElementById('selDrop');
+  if (!drop) return;
+  buildMemberSelDrop();
   drop.className = 'm-sel-drop' + (drop.className.includes('open') ? '' : ' open');
+}
+
+function setMapGroupFilter(gid) {
+  mapGroupFilter = gid;
+  buildMemberSelDrop(); // rebuild dropdown content without toggling open/close
+  Object.keys(members).forEach(id => {
+    if (id !== me?.uid) updateMemberMarker(id, members[id]);
+  });
 }
 
 function selectMember(uid) {
@@ -3408,48 +3485,76 @@ function cancelSOS() {
 }
 
 function subSOS() {
-  if (!groupId) return;
+  // Unsub all previous SOS listeners
+  sosUnsubs.forEach(fn => fn()); sosUnsubs = [];
   if (unsubSOS) { unsubSOS(); unsubSOS = null; }
-  unsubSOS = db.collection('groups').doc(groupId).collection('sos')
-    .where('active','==',true)
-    .onSnapshot(snap => {
-      snap.docChanges().forEach(change => {
-        const docId = change.doc.id;
-        const d = change.doc.data();
-        if (change.type === 'removed' || (change.type === 'modified' && !d.active)) {
-          delete activeSosBanners[docId];
+
+  const gids = Object.keys(allGroupsData).length > 0 ? Object.keys(allGroupsData) : (groupId ? [groupId] : []);
+  if (!gids.length) return;
+
+  gids.forEach(gid => {
+    const unsub = db.collection('groups').doc(gid).collection('sos')
+      .where('active','==',true)
+      .onSnapshot(snap => {
+        snap.docChanges().forEach(change => {
+          const docId = gid + '_' + change.doc.id;
+          const d = change.doc.data();
+          if (change.type === 'removed' || (change.type === 'modified' && !d.active)) {
+            delete activeSosBanners[docId];
+            // If this was MY SOS being cancelled by someone else — sync local state
+            if (d.uid === me?.uid) { sosActive = false; document.getElementById('tp-map')?.classList.remove('sos-active'); }
+            updateSOSBanner();
+            return;
+          }
+          if (change.type !== 'added') return;
+          const isMine = d.uid === me?.uid;
+          activeSosBanners[docId] = { name: d.name, uid: d.uid, isMine };
           updateSOSBanner();
-          return;
-        }
-        if (change.type !== 'added') return;
-        if (d.uid === me.uid) return;
-        // Add to persistent banner
-        activeSosBanners[docId] = { name: d.name, uid: d.uid };
+          if (!isMine) {
+            playSOSAlert();
+            if (Notification.permission === 'granted') {
+              new Notification('🆘 SOS!', { body: `${d.name} צריך/ה עזרה!`, icon: './icon.svg' });
+            }
+            if (mapObj && d.lat && d.lng) {
+              const icon = L.divIcon({ className:'', iconSize:[46,46], iconAnchor:[23,23], html:`<div class="sos-marker">🆘</div>` });
+              L.marker([d.lat, d.lng], {icon}).addTo(mapObj).bindPopup(`<b>🆘 SOS</b><br>${esc(d.name)}`).openPopup();
+            }
+          }
+        });
+        // Rebuild full banner state from snapshot
+        const prev = Object.keys(activeSosBanners).filter(k => k.startsWith(gid + '_'));
+        prev.forEach(k => delete activeSosBanners[k]);
+        snap.docs.forEach(doc => {
+          const d = doc.data();
+          if (d.active) {
+            activeSosBanners[gid + '_' + doc.id] = { name: d.name, uid: d.uid, isMine: d.uid === me?.uid };
+          }
+        });
         updateSOSBanner();
-        // Device notification
-        if (Notification.permission === 'granted') {
-          new Notification('🆘 SOS!', { body: `${d.name} צריך/ה עזרה!`, icon: './icon.svg' });
-        }
-        // Map marker
-        if (mapObj && d.lat && d.lng) {
-          const icon = L.divIcon({
-            className:'', iconSize:[46,46], iconAnchor:[23,23],
-            html:`<div class="sos-marker">🆘</div>`
-          });
-          L.marker([d.lat, d.lng], {icon}).addTo(mapObj)
-            .bindPopup(`<b>🆘 SOS</b><br>${esc(d.name)}`).openPopup();
-        }
       });
-      // On full snapshot (first load), rebuild banner from all active docs
-      activeSosBanners = {};
-      snap.docs.forEach(doc => {
-        const d = doc.data();
-        if (d.active && d.uid !== me.uid) {
-          activeSosBanners[doc.id] = { name: d.name, uid: d.uid };
-        }
-      });
-      updateSOSBanner();
-    });
+    sosUnsubs.push(unsub);
+  });
+  unsubSOS = () => { sosUnsubs.forEach(fn => fn()); sosUnsubs = []; };
+}
+
+function playSOSAlert() {
+  // Vibrate 5 seconds pattern
+  if (navigator.vibrate) navigator.vibrate([400,150,400,150,400,150,400,150,400]);
+  // Beeping sound via Web Audio API
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    for (let i = 0; i < 10; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'square';
+      osc.frequency.value = i % 2 === 0 ? 880 : 660;
+      gain.gain.setValueAtTime(0.4, ctx.currentTime + i * 0.5);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.5 + 0.45);
+      osc.start(ctx.currentTime + i * 0.5);
+      osc.stop(ctx.currentTime + i * 0.5 + 0.45);
+    }
+  } catch(e) {}
 }
 
 function updateSOSBanner() {
@@ -3457,20 +3562,22 @@ function updateSOSBanner() {
   const content = document.getElementById('sosBannerContent');
   if (!banner || !content) return;
   const entries = Object.values(activeSosBanners);
-  if (entries.length === 0) {
+  if (entries.length === 0 && !sosActive) {
     banner.classList.remove('active');
     content.innerHTML = '';
     return;
   }
   banner.classList.add('active');
-  content.innerHTML = entries.map(e =>
-    `<span>🆘 <b>${esc(e.name)}</b> צריך/ה עזרה!</span>`
-  ).join(' · ') + `<button class="sos-banner-close" onclick="dismissSOSBanner()">✕ הסתר</button>`;
-}
-
-function dismissSOSBanner() {
-  const banner = document.getElementById('sos-banner');
-  if (banner) banner.classList.remove('active');
+  let html = entries.map(e =>
+    e.isMine
+      ? `<span style="opacity:.85">${t('sosYouSent')}</span>`
+      : `<span>🆘 <b>${esc(e.name)}</b> צריך/ה עזרה!</span>`
+  ).join(' · ');
+  if (sosActive && !entries.some(e => e.isMine)) {
+    html += `<span style="opacity:.85"> · ${t('sosYouSent')}</span>`;
+  }
+  // No dismiss button — banner stays until SOS is cancelled in Firestore
+  content.innerHTML = html;
 }
 
 // ══════════════════════════════════════════════
@@ -3504,9 +3611,13 @@ function setChatTo(uid) {
 
 function updateChatToSelector() {
   const sel = document.getElementById('chatToSel');
-  if (!sel || !groupData) return;
+  if (!sel) return;
   sel.innerHTML = `<option value="">${t('dmAll')}</option>`;
-  (groupData.members || []).filter(u => u !== me.uid).forEach(uid => {
+  const allUids = new Set();
+  Object.values(allGroupsData).forEach(gd => (gd.members || []).forEach(uid => allUids.add(uid)));
+  if (groupData?.members) groupData.members.forEach(uid => allUids.add(uid));
+  allUids.delete(me?.uid);
+  allUids.forEach(uid => {
     const name = members[uid]?.name || uid.slice(0,8);
     sel.innerHTML += `<option value="${uid}">${esc(name)}</option>`;
   });
