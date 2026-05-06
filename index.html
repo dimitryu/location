@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.4.0";
+const APP_VERSION        = "2.5.0";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -773,6 +773,10 @@ select.lang-sel{
           style="width:42px;height:42px;border-radius:50%;border:none;
                  background:var(--primary);color:#fff;font-size:18px;cursor:pointer;
                  box-shadow:0 3px 10px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center">🎯</button>
+        <button onclick="refreshMap()" title="רענן מפה"
+          style="width:42px;height:42px;border-radius:50%;border:none;
+                 background:#ff9800;color:#fff;font-size:20px;cursor:pointer;
+                 box-shadow:0 3px 10px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center">🔄</button>
         <button onclick="startAddPoint()" title="הוסף נקודה"
           style="width:42px;height:42px;border-radius:50%;border:none;
                  background:var(--green);color:#fff;font-size:22px;font-weight:900;cursor:pointer;
@@ -806,7 +810,13 @@ select.lang-sel{
     <!-- POINTS -->
     <div class="tp" id="tp-points">
       <div class="sec">
-        <div class="sec-h" id="ptTitle"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <div class="sec-h" id="ptTitle" style="margin-bottom:0;flex:1"></div>
+          <button onclick="openAddPointByAddress()"
+            style="padding:7px 12px;border-radius:10px;border:none;background:var(--primary);color:#fff;
+                   font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;
+                   box-shadow:0 2px 6px rgba(0,0,0,.2)">📍 כתובת +</button>
+        </div>
         <div id="ptList"></div>
       </div>
     </div>
@@ -2148,6 +2158,64 @@ function openEditPoint(id, name, radius, gid) {
   setTimeout(() => document.getElementById('ePtName')?.focus(), 100);
 }
 
+
+function openAddPointByAddress() {
+  openModal(`
+    <div class="mttl">📍 הוסף נקודה לפי כתובת</div>
+    <div class="fg"><label class="fl">כתובת</label>
+      <input class="fi" type="text" id="mPtAddr" placeholder="לדוגמה: רחוב הרצל 1, תל אביב" autofocus></div>
+    <div class="fg"><label class="fl" id="mPtNameLbl"></label>
+      <input class="fi" type="text" id="mPtNameAddr" placeholder="שם הנקודה (אופציונלי)"></div>
+    <div class="fg"><label class="fl" id="mPtRadiusLbl"></label>
+      <input class="fi" type="number" id="mPtRadiusAddr" value="200" min="50" max="5000"></div>
+    <div class="row mt16">
+      <button class="btn btn-s flex1" onclick="closeModal()">${t('cancel')}</button>
+      <button class="btn btn-p flex1" id="geocodeBtn" onclick="geocodeAndSavePoint()">🔍 חפש ושמור</button>
+    </div>`);
+  setTimeout(() => {
+    document.getElementById('mPtAddr')?.focus();
+    const nl = document.getElementById('mPtNameLbl');
+    if (nl) nl.textContent = t('ptName');
+    const rl = document.getElementById('mPtRadiusLbl');
+    if (rl) rl.textContent = t('ptRadius');
+  }, 100);
+}
+
+async function geocodeAndSavePoint() {
+  const addr   = document.getElementById('mPtAddr')?.value.trim();
+  const name   = document.getElementById('mPtNameAddr')?.value.trim();
+  const radius = parseInt(document.getElementById('mPtRadiusAddr')?.value) || 200;
+  if (!addr) { showToast('יש להזין כתובת', 'err'); return; }
+  const btn = document.getElementById('geocodeBtn');
+  if (btn) { btn.textContent = '⏳ מחפש...'; btn.disabled = true; }
+  try {
+    const resp = await fetch(
+      'https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(addr) + '&limit=1',
+      { headers: { 'Accept-Language': 'he', 'User-Agent': 'FamilyLocationApp/2.4' } }
+    );
+    const results = await resp.json();
+    if (!results || !results.length) {
+      showToast('❌ כתובת לא נמצאה', 'err');
+      if (btn) { btn.textContent = '🔍 חפש ושמור'; btn.disabled = false; }
+      return;
+    }
+    const lat = parseFloat(results[0].lat);
+    const lng = parseFloat(results[0].lon);
+    const ptName = name || results[0].display_name.split(',')[0];
+    await db.collection('groups').doc(groupId).collection('points').add({
+      name: ptName, lat, lng, radius, createdBy: me.uid, createdAt: new Date()
+    });
+    closeModal();
+    showToastLong('✅ ' + ptName, 'ok');
+    switchTab('map');
+    setTimeout(() => { if (mapObj) mapObj.flyTo([lat, lng], 17); }, 400);
+  } catch(e) {
+    console.warn('geocode error:', e);
+    showToast('❌ שגיאת חיפוש', 'err');
+    if (btn) { btn.textContent = '🔍 חפש ושמור'; btn.disabled = false; }
+  }
+}
+
 async function saveEditPoint(id, gid) {
   const name   = document.getElementById('ePtName')?.value.trim();
   const radius = parseInt(document.getElementById('ePtRadius')?.value) || 20;
@@ -2190,6 +2258,11 @@ function flyToPoint(lat, lng) {
   if (!mapObj) return;
   switchTab('map');
   mapObj.flyTo([lat, lng], 16);
+}
+
+function refreshMap() {
+  subPoints();
+  showToast('🔄 מרענן...', 'ok');
 }
 
 // ══════════════════════════════════════════════
@@ -2441,7 +2514,8 @@ function updateMemberMarker(uid, data) {
   const popup = `<b>${esc(name)}</b>${motionLabel}${battPct}<br><small>${ts ? t('lastSeen')+': '+relativeTime(ts) : ''}</small>${etaStr}`;
 
   if (!memberMarkers[uid]) {
-    memberMarkers[uid] = L.marker([lat,lng],{icon}).addTo(mapObj).bindPopup(popup);
+    memberMarkers[uid] = L.marker([lat,lng],{icon}).addTo(mapObj).bindPopup(popup)
+      .on('click', function() { mapObj.flyTo(this.getLatLng(), 20); });
   } else {
     memberMarkers[uid].setLatLng([lat,lng]);
     memberMarkers[uid].setIcon(icon);
