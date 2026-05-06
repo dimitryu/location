@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.15";
+const APP_VERSION        = "2.5.16";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -641,12 +641,12 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.15</div>
+  <div class="lver" id="lVer">v2.5.16</div>
   <div class="lsp"></div>
 </div>
 
 <!-- Fixed "stuck?" overlay — always on top, independent of app state -->
-<div id="stuckBtn" style="display:none;position:fixed;bottom:40px;left:50%;transform:translateX(-50%);z-index:9999">
+<div id="stuckBtn" style="display:none;position:fixed;bottom:40px;left:50%;transform:translateX(-50%);z-index:2147483647;pointer-events:all">
   <button onclick="forceUpdate()" style="background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);border:1.5px solid rgba(255,255,255,0.4);color:#fff;border-radius:24px;padding:12px 28px;font-size:15px;cursor:pointer;font-family:inherit;white-space:nowrap">
     🔄 תקוע? לחץ לרענון
   </button>
