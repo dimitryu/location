@@ -1,7 +1,7 @@
 // ╔══════════════════════════════════════════╗
-// ║  Family Location — Service Worker v2.5.13 ║
+// ║  Family Location — Service Worker v2.5.14 ║
 // ╚══════════════════════════════════════════╝
-const CACHE = 'family-location-v2.5.13';
+const CACHE = 'family-location-v2.5.14';
 const ASSETS = [
   './',
   './index.html',
@@ -9,7 +9,11 @@ const ASSETS = [
   './icon.svg',
   'https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;800;900&display=swap',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js'
 ];
 
 self.addEventListener('install', e => {
@@ -29,7 +33,8 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = e.request.url;
-  if (url.includes('firestore') || url.includes('firebase') ||
+  if (url.includes('firestore.googleapis.com') || url.includes('identitytoolkit.googleapis.com') ||
+      url.includes('securetoken.googleapis.com') || url.includes('fcm.googleapis.com') ||
       url.includes('openstreetmap') || url.includes('raw.githubusercontent')) {
     e.respondWith(fetch(e.request).catch(async () => { const c = await caches.match(e.request); return c || Response.error(); }));
     return;
