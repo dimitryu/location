@@ -641,7 +641,7 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v1.0.5</div>
+  <div class="lver" id="lVer">v2.5.8</div>
   <div class="lsp"></div>
 </div>
 
@@ -4630,4 +4630,39 @@ function loadCachedMembers() {
   if (!groupId) return;
   try {
     const raw = localStorage.getItem(`fl_members_${groupId}`);
-    if (raw) Object.assign(member
+    if (raw) Object.assign(members, JSON.parse(raw));
+  } catch(e) {}
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const savedLang = localStorage.getItem('lang') || 'he';
+  lang = savedLang;
+  document.documentElement.setAttribute('lang', savedLang);
+  document.documentElement.setAttribute('dir', savedLang==='he'?'rtl':'ltr');
+  renderUI();
+  initFirebase();
+  initInstallPrompt();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => registerPeriodicSync(reg))
+      .catch(() => {});
+    // Auto-reload when new SW activates (ensures users always get latest version)
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload();
+    });
+    // Listen for SW-initiated location requests (Periodic Background Sync)
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data?.type === 'SW_REQUEST_LOCATION') {
+        if (myLat !== null) {
+          pushLocation(myLat, myLng, currentMotion);
+        } else {
+          navigator.geolocation?.getCurrentPosition(onPosition, onPosErr,
+            { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 });
+        }
+      }
+    });
+  }
+});
+</script>
+</body>
+</html>
