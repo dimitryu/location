@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.12";
+const APP_VERSION        = "2.5.13";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -641,7 +641,7 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.12</div>
+  <div class="lver" id="lVer">v2.5.13</div>
   <div class="lsp"></div>
 </div>
 
@@ -1339,32 +1339,34 @@ async function onAuth(user) {
   try {
     if (user) {
       me = user;
-      // Single Firestore read with 10s timeout — prevents infinite hang
       const ref = db.collection('users').doc(me.uid);
-      const snap = await withTimeout(ref.get(), 10000);
+      // Try cache first, fall back to network with 5s timeout
+      let snap;
+      try {
+        snap = await withTimeout(ref.get({ source: 'cache' }), 1000);
+      } catch(_) {
+        snap = await withTimeout(ref.get(), 5000);
+      }
       if (!snap.exists) {
-        await ref.set({ name: me.displayName || me.email.split('@')[0], email: me.email, createdAt: new Date() });
+        await withTimeout(ref.set({ name: me.displayName || me.email.split('@')[0], email: me.email, createdAt: new Date() }), 5000).catch(()=>{});
       }
       myProfile = snap.data() || {};
-      const gid = snap.data()?.groupId;
+      const gid = myProfile.groupId;
       if (gid) {
         groupId = gid;
         await initApp();
       } else {
-        showView('vOnboard');
-        renderUI();
+        hideSplash(); showView('vOnboard'); renderUI();
       }
     } else {
       me = null; myProfile = null; groupId = null;
-      showView('vAuth');
-      renderUI();
+      hideSplash(); showView('vAuth'); renderUI();
     }
   } catch(e) {
-    console.error('onAuth error:', e);
+    console.error('onAuth error:', e.message);
     hideSplash(); showView('vAuth'); renderUI();
-    showToast('שגיאת חיבור — בדוק אינטרנט ונסה שוב', 'err');
+    showToast('שגיאת חיבור (' + e.message + ') — נסה שוב', 'err', 6000);
   }
-  hideSplash();
 }
 
 // ══════════════════════════════════════════════
