@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.18";
+const APP_VERSION        = "2.5.19";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -642,16 +642,10 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.18</div>
+  <div class="lver" id="lVer">v2.5.19</div>
   <div class="lsp"></div>
 </div>
 
-<!-- Fixed "stuck?" overlay — always on top, independent of app state -->
-<div id="stuckBtn" style="display:none;position:fixed;bottom:40px;left:50%;transform:translateX(-50%);z-index:2147483647;pointer-events:all">
-  <button onclick="forceUpdate()" style="background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);border:1.5px solid rgba(255,255,255,0.4);color:#fff;border-radius:24px;padding:12px 28px;font-size:15px;cursor:pointer;font-family:inherit;white-space:nowrap">
-    🔄 תקוע? לחץ לרענון
-  </button>
-</div>
 
 <!-- ══════════ AUTH ══════════ -->
 <div id="vAuth" hidden>
@@ -1002,17 +996,41 @@ select.lang-sel{
 <div class="cfw" id="confetti"></div>
 
 <!-- ══════════ SCRIPTS ══════════ -->
-<!-- SAFETY: show stuck button after 8s if loading screen is still visible -->
-<!-- Runs immediately (before SDKs), fires even if SDK downloads block     -->
+<!-- SAFETY: if stuck on loading screen, make the WHOLE screen tappable to refresh -->
+<!-- Runs immediately (before SDKs), fires even if SDK downloads block            -->
 <script>
 (function(){
-  function showStuckIfNeeded() {
+  function activateStuckMode() {
     var el = document.getElementById('vLoading');
-    var btn = document.getElementById('stuckBtn');
-    if (btn && el && !el.hidden) btn.style.display = 'block';
+    if (!el || el.hidden) return;
+    // Make entire loading screen the tap target
+    el.style.pointerEvents = 'auto';
+    el.style.cursor = 'pointer';
+    el.onclick = function() {
+      el.style.opacity = '0.7';
+      // Self-contained forceUpdate — no dependency on app code
+      try {
+        if (window.caches) {
+          caches.keys().then(function(ks){ ks.forEach(function(k){ caches.delete(k); }); });
+        }
+        if (navigator.serviceWorker) {
+          navigator.serviceWorker.getRegistrations().then(function(rs){
+            rs.forEach(function(r){ r.unregister(); });
+          });
+        }
+      } catch(e) {}
+      setTimeout(function(){
+        location.replace(location.href.split('?')[0] + '?bust=' + Date.now());
+      }, 400);
+    };
+    // Show tap hint
+    var sub = document.getElementById('lSub');
+    if (sub) sub.textContent = '\u{1F504} \u05DC\u05D7\u05E5 \u05DC\u05E8\u05E2\u05E0\u05D5\u05DF';
+    var hint = document.getElementById('lTitle');
+    if (hint) hint.style.opacity = '0.7';
   }
-  setTimeout(showStuckIfNeeded, 8000);
-  setTimeout(showStuckIfNeeded, 15000); // second chance
+  setTimeout(activateStuckMode, 8000);
+  setTimeout(activateStuckMode, 14000);
 })();
 </script>
 <!-- defer: non-blocking download, executes in order before DOMContentLoaded -->
@@ -4732,19 +4750,7 @@ async function forceUpdate() {
   location.replace(location.href.split('?')[0] + '?bust=' + Date.now());
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  // Show "stuck?" button if still on loading screen OR if vApp is hidden
-  function checkStuck() {
-    const vLoading = document.getElementById('vLoading');
-    const vApp     = document.getElementById('vApp');
-    const btn      = document.getElementById('stuckBtn');
-    if (btn && ((vLoading && !vLoading.hidden) || (vApp && vApp.hidden))) {
-      btn.style.display = 'block';
-    }
-  }
-  setTimeout(checkStuck, 5000);
-  setTimeout(checkStuck, 12000); // second chance
-});
+// stuckBtn removed — loading screen itself is the tap target (see early inline script above)
 
 document.addEventListener('DOMContentLoaded', () => {
   const savedLang = localStorage.getItem('lang') || 'he';
