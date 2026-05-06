@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.7";
+const APP_VERSION        = "2.5.8";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -1062,8 +1062,9 @@ let metricsGroupsCollapsed = {};
 let logViewUid = null;
 let currentStayLogDocId = null;  // tracks active stay log Firestore doc for in-place updates
 const SPEED_ALERT_MS = 33;   // m/s ≈ 120 km/h
-const TILE_LIGHT = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-const TILE_DARK  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const MAPBOX_TOKEN = 'pk.eyJ1IjoiZGltaXRyeXUiLCJhIjoiY21vdWx2Z3M5MDUwbTJwczV0bmNkY2syZyJ9.NXZPd_lUtVRVgKrj25bHZA';
+const TILE_LIGHT = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`;
+const TILE_DARK  = `https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`;
 const STATUS_OPTIONS = [
   {emoji:'🏠', key:'home',    label:{he:'בבית',    en:'Home',     ru:'Дома'}},
   {emoji:'🏫', key:'school',  label:{he:'בבי"ס',  en:'School',   ru:'Школа'}},
@@ -2023,9 +2024,9 @@ function initMap() {
   mapObj = L.map(el, { zoomControl: false, attributionControl: false })
     .setView([31.7683, 35.2137], 10);
   tileLayer = L.tileLayer(TILE_LIGHT, {
-    subdomains: 'abcd',
-    maxZoom: 21, maxNativeZoom: 20,
-    attribution: '© <a href="https://openstreetmap.org">OSM</a> © <a href="https://carto.com">CARTO</a>'
+    tileSize: 512, zoomOffset: -1,
+    maxZoom: 22, maxNativeZoom: 22,
+    attribution: '© <a href="https://www.mapbox.com/">Mapbox</a> © <a href="https://www.openstreetmap.org/">OSM</a>'
   }).addTo(mapObj);
   L.control.attribution({ prefix: false }).addTo(mapObj);
   L.control.zoom({ position: 'bottomleft' }).addTo(mapObj);
@@ -4629,11 +4630,4 @@ function loadCachedMembers() {
   if (!groupId) return;
   try {
     const raw = localStorage.getItem(`fl_members_${groupId}`);
-    if (raw) Object.assign(members, JSON.parse(raw));
-  } catch(e) {}
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const savedLang = localStorage.getItem('lang') || 'he';
-  lang = savedLang;
-  document.documentElement
+    if (raw) Object.assign(member
