@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.1.0";
+const APP_VERSION        = "2.2.0";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -1492,11 +1492,25 @@ async function initApp() {
   setTimeout(() => { if(!mapInit) initMap(); }, 300);
   startTracking();
   reqNotifPermQuiet();
+  setTimeout(sendSWContext, 2000); // send auth context to SW for background SOS detection
+  setInterval(sendSWContext, 30 * 60 * 1000); // refresh token every 30 min
   renderPrivacyBtn();
   setTimeout(checkForUpdate, 4000);
   // Seed history so first Android back press goes to map, not exit
   history.replaceState({ tab: 'map' }, '');
   _currentTab = 'map';
+}
+
+// Send auth context to SW so it can poll Firestore for SOS when app is closed
+async function sendSWContext() {
+  if (!me || !('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const token = await me.getIdToken();
+    const groupIds = Object.keys(allGroupsData).length ? Object.keys(allGroupsData) : (groupId ? [groupId] : []);
+    const msg = { type: 'SET_CONTEXT', uid: me.uid, token, groupIds, projectId: 'location-56469' };
+    if (reg.active) reg.active.postMessage(msg);
+  } catch(e) {}
 }
 
 function unsubAll() {
@@ -1560,7 +1574,10 @@ async function loadGroup() {
           const gnlEl = document.getElementById('nlGroup');
           if (gnlEl) gnlEl.textContent = t('navGrps');
           const selEl = document.getElementById('selName');
-          if (selEl && !focusedMember) selEl.textContent = groupData?.name || '';
+          if (selEl && !focusedMember) selEl.textContent =
+            (Object.keys(allGroupsData).length > 1 && !mapGroupFilter)
+              ? t('allGroups')
+              : (groupData?.name || '');
         }
         myGroupsList = Object.entries(allGroupsData).map(([id, d]) => ({ id, name: d.name || id }));
 
@@ -1950,9 +1967,10 @@ async function savePoint(lat, lng) {
   switchTab('points');
 }
 
-async function deletePoint(id) {
+async function deletePoint(id, gid) {
   if (!confirm(t('confirmDelPt'))) return;
-  await db.collection('groups').doc(groupId).collection('points').doc(id).delete();
+  const targetGid = gid || groupId;
+  await db.collection('groups').doc(targetGid).collection('points').doc(id).delete();
   showToast(t('del'),'ok');
 }
 
@@ -1978,22 +1996,32 @@ function renderPoints() {
     el.innerHTML = `<div class="empty"><div class="ei">📍</div><div class="et">${t('noPts')}</div><div class="es">${t('noPtsS')}</div></div>`;
     return;
   }
-  el.innerHTML = points.map(p => `
+  el.innerHTML = points.map(p => {
+    const gd = allGroupsData[p._gid] || groupData || {};
+    const isAdmin   = gd.adminUid === me?.uid;
+    const isCreator = p.createdBy === me?.uid;
+    const canDelete = isAdmin || isCreator;
+    const creatorName = p.createdBy ? (members[p.createdBy]?.name || p.createdBy.slice(0,6)) : '';
+    const creatorLabel = creatorName ? ` · ${creatorName}` : '';
+    const gidForOp = p._gid || groupId;
+    return `
     <div class="point-row">
       <div class="point-ico">📍</div>
       <div class="point-info">
         <div class="point-name">${esc(p.name)}</div>
-        <div class="point-sub">${t('radiusM')}${p.radius}${t('meters')}</div>
+        <div class="point-sub">${t('radiusM')}${p.radius}${t('meters')}${creatorLabel}</div>
       </div>
       <div class="point-actions">
         <button class="small-btn" onclick="flyToPoint(${p.lat},${p.lng})">🗺️</button>
-        <button class="small-btn" onclick="openEditPoint('${p.id}','${esc(p.name)}',${p.radius})">✏️</button>
-        <button class="small-btn del" onclick="deletePoint('${p.id}')">🗑️</button>
+        <button class="small-btn" onclick="openEditPoint('${p.id}','${esc(p.name)}',${p.radius},'${gidForOp}')">✏️</button>
+        ${canDelete ? `<button class="small-btn del" onclick="deletePoint('${p.id}','${gidForOp}')">🗑️</button>` : ''}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
-function openEditPoint(id, name, radius) {
+function openEditPoint(id, name, radius, gid) {
+  const targetGid = gid || groupId;
   openModal(`
     <div class="mttl">${t('editPt')}</div>
     <div class="fg"><label class="fl">${t('ptName')}</label>
@@ -2002,16 +2030,17 @@ function openEditPoint(id, name, radius) {
       <input class="fi" type="number" id="ePtRadius" value="${radius}" min="10" max="5000"></div>
     <div class="row mt16">
       <button class="btn btn-s flex1" onclick="closeModal()">${t('cancel')}</button>
-      <button class="btn btn-p flex1" onclick="saveEditPoint('${id}')">${t('save')}</button>
+      <button class="btn btn-p flex1" onclick="saveEditPoint('${id}','${targetGid}')">${t('save')}</button>
     </div>`);
   setTimeout(() => document.getElementById('ePtName')?.focus(), 100);
 }
 
-async function saveEditPoint(id) {
+async function saveEditPoint(id, gid) {
   const name   = document.getElementById('ePtName')?.value.trim();
   const radius = parseInt(document.getElementById('ePtRadius')?.value) || 20;
   if (!name) return;
-  await db.collection('groups').doc(groupId).collection('points').doc(id).update({ name, radius });
+  const targetGid = gid || groupId;
+  await db.collection('groups').doc(targetGid).collection('points').doc(id).update({ name, radius });
   closeModal();
   showToast('✅ '+name,'ok');
 }
@@ -2400,10 +2429,16 @@ function subAdminNotifications() {
         const n = doc.data();
         const ts = n.ts?.toDate ? n.ts.toDate() : new Date();
         if (Date.now() - ts.getTime() < 300000) {
-          const msg = `📍 ${n.memberName} ${t('arriveAt')}: ${n.pointName}`;
-          showToastLong(msg, 'ok');
-          if (notifEnabled) {
-            showPushNotif('📍 Family Location', msg, 'arrival-mem-' + doc.id);
+          if (n.type === 'sos') {
+            const msg = `🚨 SOS — ${n.memberName} צריך/ה עזרה!`;
+            showToastLong(msg, 'err');
+            if (notifEnabled) showPushNotif('🚨 SOS!', msg, 'sos-mem-' + doc.id,
+              [600,150,600,150,600,150,600,150,600,150,600]);
+            playSOSAlert();
+          } else {
+            const msg = `📍 ${n.memberName} ${t('arriveAt')}: ${n.pointName}`;
+            showToastLong(msg, 'ok');
+            if (notifEnabled) showPushNotif('📍 Family Location', msg, 'arrival-mem-' + doc.id);
           }
         }
         doc.ref.update({ seen: true }).catch(()=>{});
@@ -3536,7 +3571,7 @@ function setMapGroupFilter(gid) {
   if (nameEl && !focusedMember) {
     nameEl.textContent = gid
       ? (allGroupsData[gid]?.name || gid.slice(0,6))
-      : (groupData?.name || localStorage.getItem('fl_grp_name') || '');
+      : (Object.keys(allGroupsData).length > 1 ? t('allGroups') : (groupData?.name || localStorage.getItem('fl_grp_name') || ''));
   }
   buildMemberSelDrop();
   Object.keys(members).forEach(id => {
@@ -3554,7 +3589,7 @@ function selectMember(uid) {
     ? (members[uid]?.name || uid.slice(0,6))
     : mapGroupFilter
       ? (allGroupsData[mapGroupFilter]?.name || '')
-      : (groupData?.name || localStorage.getItem('fl_grp_name') || '');
+      : (Object.keys(allGroupsData).length > 1 ? t('allGroups') : (groupData?.name || localStorage.getItem('fl_grp_name') || ''));
   // Re-render all markers
   Object.keys(members).forEach(id => {
     if (id !== me.uid) updateMemberMarker(id, members[id]);
@@ -3705,6 +3740,25 @@ function triggerSOS() {
     sosTs: firebase.firestore.FieldValue.serverTimestamp()
   }).catch(()=>{});
   saveGroupNotification('sos', myName, `🆘 SOS — ${myName}`, null);
+  // Broadcast SOS to every group member via memberNotifs (enables SW background detection)
+  const sosMembers = (groupData?.members || []).filter(uid => uid !== me.uid);
+  if (sosMembers.length) {
+    const sosBatch = db.batch();
+    const sosNotifCol = db.collection('groups').doc(groupId).collection('memberNotifs');
+    sosMembers.forEach(toUid => {
+      sosBatch.set(sosNotifCol.doc(), {
+        type: 'sos', fromUid: me.uid, memberName: myName,
+        toUid, groupId,
+        ts: firebase.firestore.FieldValue.serverTimestamp(),
+        seen: false
+      });
+    });
+    sosBatch.commit().catch(()=>{});
+  }
+  // Trigger immediate SW background sync so other devices get SOS even if app is closed
+  if ('serviceWorker' in navigator && 'SyncManager' in window) {
+    navigator.serviceWorker.ready.then(reg => reg.sync.register('sos-check').catch(()=>{})).catch(()=>{});
+  }
   showToastLong(t('sosSent'), 'err');
 }
 
@@ -3798,15 +3852,12 @@ function subGroupEvents() {
 }
 
 function playSOSAlert() {
-  // Max vibration — 15 seconds pattern
+  // Max vibration — 10 seconds pattern
   if (navigator.vibrate) navigator.vibrate([
-    600,150,600,150,600,150,
-    600,150,600,150,600,150,
-    600,150,600,150,600,150,
-    600,150,600,150,600,150,
-    600,150,600,150,600,150
+    600,150,600,150,600,150,600,150,600,150,
+    600,150,600,150,600,150,600,150,600,150
   ]);
-  // Maximum-volume alarm via Web Audio API — 15 seconds (30 beeps × 0.5s)
+  // Maximum-volume alarm via Web Audio API — 10 seconds (20 beeps × 0.5s)
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     // Unlock audio context on mobile (required after user gesture)
@@ -3821,7 +3872,7 @@ function playSOSAlert() {
       compressor.release.value = 0.1;
       compressor.connect(ctx.destination);
 
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 20; i++) {
         const osc  = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
