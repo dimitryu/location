@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.2";
+const APP_VERSION        = "2.5.3";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -2046,11 +2046,20 @@ function cancelAddPoint() {
 }
 
 function openAddPointModal(lat, lng) {
+  // Build group selector only when user belongs to multiple groups
+  const gids = Object.keys(allGroupsData);
+  const groupSel = gids.length > 1
+    ? `<div class="fg"><label class="fl">קבוצה</label>
+         <select class="fi" id="mPtGroup">
+           ${gids.map(gid => `<option value="${gid}"${gid===groupId?' selected':''}>${allGroupsData[gid]?.name||gid.slice(0,8)}</option>`).join('')}
+         </select></div>`
+    : '';
   const html = `
     <div class="mttl">${t('addPt')}</div>
     <div style="background:var(--bg3);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--text2)">
       📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}
     </div>
+    ${groupSel}
     <div class="fg"><label class="fl">${t('ptName')}</label>
       <input class="fi" type="text" id="mPtName" placeholder="${t('ptName')}" autofocus></div>
     <div class="fg"><label class="fl">${t('ptRadius')}</label>
@@ -2067,7 +2076,9 @@ async function savePoint(lat, lng) {
   const name   = document.getElementById('mPtName')?.value.trim();
   const radius = parseInt(document.getElementById('mPtRadius')?.value) || 200;
   if (!name) return;
-  await db.collection('groups').doc(groupId).collection('points').add({
+  // Use explicitly selected group (if multi-group selector shown), else fallback to groupId
+  const targetGid = document.getElementById('mPtGroup')?.value || groupId;
+  await db.collection('groups').doc(targetGid).collection('points').add({
     name, lat, lng, radius, createdBy: me.uid, createdAt: new Date()
   });
   closeModal();
@@ -2252,14 +2263,22 @@ async function debugPoints() {
     <div style="font-family:monospace;font-size:11px;background:var(--bg3);border-radius:8px;padding:12px;
                 white-space:pre-wrap;direction:ltr;text-align:left;max-height:55vh;overflow-y:auto;line-height:1.6">${lines.join('\n')}</div>
     <div class="row mt16">
-      <button class="btn btn-s flex1" onclick="navigator.clipboard?.writeText(${JSON.stringify('debug')}).catch(()=>{});closeModal()">העתק</button>
+      <button class="btn btn-s flex1" onclick="navigator.clipboard?.writeText(document.querySelector('#modalBox pre,#modalBox div[style*=monospace]')?.innerText||'').catch(()=>{});showToast('הועתק','ok')">העתק</button>
       <button class="btn btn-p flex1" onclick="closeModal()">סגור</button>
     </div>`);
 }
 
 function openAddPointByAddress() {
+  const gids = Object.keys(allGroupsData);
+  const groupSel = gids.length > 1
+    ? `<div class="fg"><label class="fl">קבוצה</label>
+         <select class="fi" id="mPtGroupAddr">
+           ${gids.map(gid => `<option value="${gid}"${gid===groupId?' selected':''}>${allGroupsData[gid]?.name||gid.slice(0,8)}</option>`).join('')}
+         </select></div>`
+    : '';
   openModal(`
     <div class="mttl">📍 הוסף נקודה לפי כתובת</div>
+    ${groupSel}
     <div class="fg"><label class="fl">כתובת</label>
       <input class="fi" type="text" id="mPtAddr" placeholder="לדוגמה: רחוב הרצל 1, תל אביב" autofocus></div>
     <div class="fg"><label class="fl" id="mPtNameLbl"></label>
@@ -2300,7 +2319,8 @@ async function geocodeAndSavePoint() {
     const lat = parseFloat(results[0].lat);
     const lng = parseFloat(results[0].lon);
     const ptName = name || results[0].display_name.split(',')[0];
-    await db.collection('groups').doc(groupId).collection('points').add({
+    const targetGid = document.getElementById('mPtGroupAddr')?.value || groupId;
+    await db.collection('groups').doc(targetGid).collection('points').add({
       name: ptName, lat, lng, radius, createdBy: me.uid, createdAt: new Date()
     });
     closeModal();
