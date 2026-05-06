@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.5";
+const APP_VERSION        = "2.5.6";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -3598,15 +3598,25 @@ async function loadMetrics() {
   el.innerHTML = '';
   try {
     for (const grp of groupsToLoad) {
-      const snap = await db.collection('metrics')
-        .where('groupId','==',grp.id).where('date','==',selectedDate).get();
-      const grpIsAdmin = allGroupsData[grp.id]?.adminUid === me?.uid;
+      const grpData  = allGroupsData[grp.id] || {};
+      const grpIsAdmin = grpData.adminUid === me?.uid;
+      // Decide which UIDs to fetch metrics for
+      const memberUids = grpIsAdmin
+        ? (grpData.members || [me.uid])
+        : [me.uid];
+
+      // Fetch by direct doc-ID — no compound query, no composite index needed
+      const metricDocs = await Promise.all(
+        memberUids.map(uid =>
+          db.collection('metrics').doc(`${grp.id}_${uid}_${selectedDate}`).get()
+            .catch(() => null)  // gracefully skip if permission missing
+        )
+      );
 
       let cardsHtml = '';
-      snap.docs.forEach(d => {
-        const m = d.data();
-        if (!grpIsAdmin && m.uid !== me.uid) return;
-        cardsHtml += renderMetricCard(m, grpIsAdmin);
+      metricDocs.forEach(d => {
+        if (!d || !d.exists) return;
+        cardsHtml += renderMetricCard(d.data(), grpIsAdmin);
       });
       if (!cardsHtml) cardsHtml = `<div style="text-align:center;padding:14px;color:var(--text2)">${t('metNoData')}</div>`;
 
@@ -3628,7 +3638,10 @@ async function loadMetrics() {
     if (!el.innerHTML) {
       el.innerHTML = `<div class="empty"><div class="ei">📊</div><div class="et">${t('metNoData')}</div></div>`;
     }
-  } catch(e) { el.innerHTML = '<div style="padding:20px;color:var(--red)">'+e.message+'</div>'; }
+  } catch(e) {
+    console.warn('loadMetrics error:', e);
+    el.innerHTML = `<div class="empty"><div class="ei">📊</div><div class="et">${t('metNoData')}</div></div>`;
+  }
   await loadLocationLog();
 }
 
