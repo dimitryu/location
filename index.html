@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.16";
+const APP_VERSION        = "2.5.17";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -641,7 +641,7 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.16</div>
+  <div class="lver" id="lVer">v2.5.17</div>
   <div class="lsp"></div>
 </div>
 
@@ -945,8 +945,13 @@ select.lang-sel{
           </div>
         </div>
 
-        <div style="text-align:center;padding:16px 0;color:var(--text2);font-size:12px">
+        <div style="text-align:center;padding:12px 0 4px;color:var(--text2);font-size:12px">
           Family Location v<span id="verFoot">1.4.3</span> · dimitryu
+        </div>
+        <div style="text-align:center;padding:0 16px 20px">
+          <button class="btn btn-s btn-sm" onclick="forceUpdate()" style="width:100%;gap:8px">
+            🔄 <span>רענן / עדכן גרסה</span>
+          </button>
         </div>
       </div>
     </div>
