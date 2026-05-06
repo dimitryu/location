@@ -1,7 +1,7 @@
 // ╔══════════════════════════════════════════╗
-// ║  Family Location — Service Worker v2.5.14 ║
+// ║  Family Location — Service Worker v2.5.15 ║
 // ╚══════════════════════════════════════════╝
-const CACHE = 'family-location-v2.5.14';
+const CACHE = 'family-location-v2.5.15';
 const ASSETS = [
   './',
   './index.html',
@@ -33,8 +33,7 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = e.request.url;
-  if (url.includes('firestore.googleapis.com') || url.includes('identitytoolkit.googleapis.com') ||
-      url.includes('securetoken.googleapis.com') || url.includes('fcm.googleapis.com') ||
+  if (url.includes('firestore') || url.includes('firebase') ||
       url.includes('openstreetmap') || url.includes('raw.githubusercontent')) {
     e.respondWith(fetch(e.request).catch(async () => { const c = await caches.match(e.request); return c || Response.error(); }));
     return;

@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.14";
+const APP_VERSION        = "2.5.15";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -641,7 +641,7 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.14</div>
+  <div class="lver" id="lVer">v2.5.15</div>
   <div class="lsp"></div>
 </div>
 
@@ -996,11 +996,25 @@ select.lang-sel{
 <div class="cfw" id="confetti"></div>
 
 <!-- ══════════ SCRIPTS ══════════ -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
+<!-- SAFETY: show stuck button after 8s if loading screen is still visible -->
+<!-- Runs immediately (before SDKs), fires even if SDK downloads block     -->
+<script>
+(function(){
+  function showStuckIfNeeded() {
+    var el = document.getElementById('vLoading');
+    var btn = document.getElementById('stuckBtn');
+    if (btn && el && !el.hidden) btn.style.display = 'block';
+  }
+  setTimeout(showStuckIfNeeded, 8000);
+  setTimeout(showStuckIfNeeded, 15000); // second chance
+})();
+</script>
+<!-- defer: non-blocking download, executes in order before DOMContentLoaded -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js" defer></script>
 
 <script>
 // ══════════════════════════════════════════════
@@ -4713,12 +4727,17 @@ async function forceUpdate() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Show "stuck?" button after 7s if app view is still hidden (= stuck)
-  setTimeout(() => {
-    const vApp = document.getElementById('vApp');
-    const btn  = document.getElementById('stuckBtn');
-    if (btn && vApp && vApp.hidden) btn.style.display = 'block';
-  }, 7000);
+  // Show "stuck?" button if still on loading screen OR if vApp is hidden
+  function checkStuck() {
+    const vLoading = document.getElementById('vLoading');
+    const vApp     = document.getElementById('vApp');
+    const btn      = document.getElementById('stuckBtn');
+    if (btn && ((vLoading && !vLoading.hidden) || (vApp && vApp.hidden))) {
+      btn.style.display = 'block';
+    }
+  }
+  setTimeout(checkStuck, 5000);
+  setTimeout(checkStuck, 12000); // second chance
 });
 
 document.addEventListener('DOMContentLoaded', () => {
