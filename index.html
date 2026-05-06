@@ -1516,10 +1516,8 @@ async function getOAuthToken() {
     const header  = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
     const payload = b64url(JSON.stringify(claim));
     const toSign  = header + '.' + payload;
-    const pemKey = cfg.privateKey.replace(/\n/g, '
-');
-    const b64Key = pemKey.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|
-/g, '');
+    const pemKey = cfg.privateKey.replace(/\\n/g, '\n');
+    const b64Key = pemKey.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\n/g, '');
     const binKey = Uint8Array.from(atob(b64Key), c => c.charCodeAt(0));
     const cryptoKey = await crypto.subtle.importKey(
       'pkcs8', binKey.buffer,
