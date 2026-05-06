@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.1";
+const APP_VERSION        = "2.5.2";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -810,12 +810,15 @@ select.lang-sel{
     <!-- POINTS -->
     <div class="tp" id="tp-points">
       <div class="sec">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
           <div class="sec-h" id="ptTitle" style="margin-bottom:0;flex:1"></div>
           <button onclick="openAddPointByAddress()"
             style="padding:7px 12px;border-radius:10px;border:none;background:var(--primary);color:#fff;
                    font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;
                    box-shadow:0 2px 6px rgba(0,0,0,.2)">📍 כתובת +</button>
+          <button onclick="debugPoints()"
+            style="padding:7px 10px;border-radius:10px;border:none;background:var(--bg3);color:var(--text2);
+                   font-size:13px;cursor:pointer;font-family:inherit" title="אבחון">🔍</button>
         </div>
         <div id="ptList"></div>
       </div>
@@ -2195,6 +2198,64 @@ function openEditPoint(id, name, radius, gid) {
   setTimeout(() => document.getElementById('ePtName')?.focus(), 100);
 }
 
+
+async function debugPoints() {
+  const lines = [];
+  const ts = new Date().toLocaleTimeString('he');
+  lines.push('=== אבחון ניקודות ' + ts + ' ===');
+  lines.push('גרסה: ' + APP_VERSION);
+  lines.push('UID: ' + (me?.uid?.slice(0,8) || '—') + '...');
+  lines.push('groupId: ' + (groupId?.slice(0,8) || 'NULL') + (groupId ? '...' : ''));
+  const gids = Object.keys(allGroupsData);
+  lines.push('allGroupsData: ' + (gids.length ? gids.map(k=>k.slice(0,8)+'...').join(', ') : 'ריק!'));
+  lines.push('points בזיכרון: ' + points.length);
+  lines.push('');
+
+  const testGids = gids.length > 0 ? gids : (groupId ? [groupId] : []);
+  if (!testGids.length) {
+    lines.push('❌ אין groupId — לא מחובר לקבוצה');
+  }
+
+  for (const gid of testGids) {
+    lines.push('── קבוצה: ' + gid.slice(0,8) + '... ──');
+    try {
+      const gs = await db.collection('groups').doc(gid).get();
+      if (!gs.exists) {
+        lines.push('  ❌ מסמך קבוצה לא קיים');
+        continue;
+      }
+      const gd = gs.data();
+      const memberList = gd.members || [];
+      const iAm = memberList.includes(me?.uid);
+      lines.push('  שם: ' + (gd.name || '?'));
+      lines.push('  מנהל: ' + (gd.adminUid === me?.uid ? '✅ אתה' : gd.adminUid?.slice(0,8)+'...'));
+      lines.push('  חברים (' + memberList.length + '): ' + (iAm ? '✅ אתה בפנים' : '❌ אתה לא בחברים!'));
+    } catch(e) {
+      lines.push('  ❌ שגיאת קריאת קבוצה: ' + (e.code || e.message));
+    }
+    try {
+      const ps = await db.collection('groups').doc(gid).collection('points').get();
+      lines.push('  ניקודות שנמצאו: ' + ps.size);
+      ps.docs.slice(0,5).forEach(d => {
+        lines.push('    • ' + (d.data().name || '?') + ' (' + d.id.slice(0,6) + ')');
+      });
+      if (ps.size > 5) lines.push('    ... ועוד ' + (ps.size-5));
+    } catch(e) {
+      lines.push('  ❌ שגיאת קריאת ניקודות: ' + (e.code || e.message));
+      if (e.code === 'permission-denied') lines.push('  👉 חוקי Firestore חוסמים — יש לפרסם מחדש');
+    }
+    lines.push('');
+  }
+
+  openModal(`
+    <div class="mttl">🔍 אבחון ניקודות</div>
+    <div style="font-family:monospace;font-size:11px;background:var(--bg3);border-radius:8px;padding:12px;
+                white-space:pre-wrap;direction:ltr;text-align:left;max-height:55vh;overflow-y:auto;line-height:1.6">${lines.join('\n')}</div>
+    <div class="row mt16">
+      <button class="btn btn-s flex1" onclick="navigator.clipboard?.writeText(${JSON.stringify('debug')}).catch(()=>{});closeModal()">העתק</button>
+      <button class="btn btn-p flex1" onclick="closeModal()">סגור</button>
+    </div>`);
+}
 
 function openAddPointByAddress() {
   openModal(`
