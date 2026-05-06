@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──
+    function isAuth() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function isGroupMember(gid) {
+      return isAuth() && uid() in get(/databases/$(database)/documents/groups/$(gid)).data.members;
+    }
+    function isGroupAdmin(gid) {
+      return isAuth() && get(/databases/$(database)/documents/groups/$(gid)).data.adminUid == uid();
+    }
+
+    // ── Users ──
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow write: if isAuth() && uid() == userId;
+    }
+
+    // ── Groups ──
+    match /groups/{gid} {
+      allow read: if isGroupMember(gid) || isGroupAdmin(gid);
+      allow create: if isAuth();
+      allow update: if isGroupMember(gid) || isGroupAdmin(gid);
+      allow delete: if isGroupAdmin(gid);
+
+      // Points of Interest — readable and writable by ALL group members
+      match /points/{pid} {
+        allow read: if isGroupMember(gid) || isGroupAdmin(gid);
+        allow create: if isGroupMember(gid) || isGroupAdmin(gid);
+        allow update: if isGroupMember(gid) || isGroupAdmin(gid);
+        allow delete: if isGroupAdmin(gid)
+          || (isGroupMember(gid) && resource.data.createdBy == uid());
+      }
+
+      // SOS subcollection — all members read/write
+      match /sos/{sosId} {
+        allow read, write: if isGroupMember(gid) || isGroupAdmin(gid);
+      }
+
+      // Member notifications — members read their own, anyone in group writes
+      match /memberNotifs/{nid} {
+        allow read: if isAuth() && (resource.data.toUid == uid() || isGroupAdmin(gid));
+        allow create: if isGroupMember(gid) || isGroupAdmin(gid);
+        allow update: if isAuth() && resource.data.toUid == uid();
+        allow delete: if isGroupAdmin(gid);
+      }
+
+      // Group events (chat/activity feed)
+      match /groupEvents/{eid} {
+        allow read, write: if isGroupMember(gid) || isGroupAdmin(gid);
+      }
+    }
+
+    // ── Location tracking ──
+    match /locations/{userId} {
+      allow read: if isAuth();
+      allow write: if isAuth() && uid() == userId;
+    }
+
+    // ── Location log ──
+    match /locationLog/{logId} {
+      allow read, write: if isAuth() && uid() == resource.data.uid;
+      allow create: if isAuth();
+    }
+
+    // ── Tracks (movement history) ──
+    match /tracks/{trackId} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+    }
+
+    // ── Admin notifications (legacy) ──
+    match /adminNotifs/{nid} {
+      allow read: if isAuth() && resource.data.adminUid == uid();
+      allow create: if isAuth();
+      allow update: if isAuth() && resource.data.adminUid == uid();
+    }
+
+    // ── Join codes ──
+    match /joinCodes/{code} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+    }
+
+    // ── App config (FCM server key etc.) — admin only ──
+    match /appConfig/{doc} {
+      allow read: if isAuth();
+      allow write: if false; // write via Firebase Console only
+    }
+  }
+}

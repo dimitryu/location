@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.2.0";
+const APP_VERSION        = "2.3.0";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -980,6 +980,7 @@ select.lang-sel{
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 
 <script>
 // ══════════════════════════════════════════════
@@ -1022,6 +1023,8 @@ let myStatus      = null;
 let isQuiet       = false;
 let tileLayer     = null;
 let sosActive     = false;
+let fcmToken      = null;  // Firebase Cloud Messaging registration token
+const VAPID_KEY   = 'BMREC3BSFf0Fp4qfTv8oglvpigNZlInb5nFO6LRll4aL-1ZSyyTmFVTIWCfZQ3Mqo2mv1Ah1SK9DVKo8w1scSj8';
 let unsubChat     = null;
 let unsubSOS      = null;
 let unreadChat    = 0;
@@ -1476,6 +1479,50 @@ function genCode(len) {
 // ══════════════════════════════════════════════
 //  APP INIT
 // ══════════════════════════════════════════════
+// ── FCM: init Firebase Cloud Messaging ──
+async function initFCM() {
+  if (!('serviceWorker' in navigator) || !firebase.messaging) return;
+  try {
+    const messaging = firebase.messaging();
+    const reg = await navigator.serviceWorker.ready;
+    const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+    if (!token) return;
+    fcmToken = token;
+    // Save token to user's Firestore doc so others can push to us
+    await db.collection('users').doc(me.uid).update({ fcmToken: token }).catch(()=>{});
+  } catch(e) {
+    console.warn('FCM init failed:', e?.code || e?.message);
+  }
+}
+
+// Send FCM push to a list of UIDs via their stored fcmTokens
+// Uses FCM REST API — requires the FCM server key stored in Firestore config
+async function sendFCMToUsers(uids, title, body, tag) {
+  if (!uids.length) return;
+  try {
+    // Fetch FCM tokens for all target UIDs
+    const snaps = await Promise.all(uids.map(uid => db.collection('users').doc(uid).get()));
+    const tokens = snaps.map(s => s.data()?.fcmToken).filter(Boolean);
+    if (!tokens.length) return;
+    // Fetch FCM server key from Firestore config doc
+    const cfgSnap = await db.collection('appConfig').doc('fcm').get();
+    const serverKey = cfgSnap.data()?.serverKey;
+    if (!serverKey) return;
+    // Send to each token
+    await Promise.all(tokens.map(token =>
+      fetch('https://fcm.googleapis.com/fcm/send', {
+        method: 'POST',
+        headers: { 'Authorization': 'key=' + serverKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: token,
+          notification: { title, body, icon: './icon.svg', badge: './icon.svg', tag, requireInteraction: tag.startsWith('sos') },
+          webpush: { notification: { vibrate: tag.startsWith('sos') ? [600,150,600,150,600,150,600,150,600] : [200,100,200] } }
+        })
+      }).catch(()=>{})
+    ));
+  } catch(e) {}
+}
+
 async function initApp() {
   showView('vApp');
   renderUI();
@@ -1492,7 +1539,7 @@ async function initApp() {
   setTimeout(() => { if(!mapInit) initMap(); }, 300);
   startTracking();
   reqNotifPermQuiet();
-  setTimeout(sendSWContext, 2000); // send auth context to SW for background SOS detection
+  setTimeout(async () => { await initFCM(); sendSWContext(); }, 2000); // send auth context to SW for background SOS detection
   setInterval(sendSWContext, 30 * 60 * 1000); // refresh token every 30 min
   renderPrivacyBtn();
   setTimeout(checkForUpdate, 4000);
@@ -1985,6 +2032,9 @@ function subPoints() {
       points.push(...snap.docs.map(d => ({ id: d.id, _gid: gid, ...d.data() })));
       renderPoints();
       syncPointMarkers();
+    }, err => {
+      // Permission denied — this group's points are not readable by this user
+      console.warn('subPoints permission error for', gid, err?.code);
     })
   );
   unsubPts = () => unsubs.forEach(fn => fn());
@@ -2001,7 +2051,11 @@ function renderPoints() {
     const isAdmin   = gd.adminUid === me?.uid;
     const isCreator = p.createdBy === me?.uid;
     const canDelete = isAdmin || isCreator;
-    const creatorName = p.createdBy ? (members[p.createdBy]?.name || p.createdBy.slice(0,6)) : '';
+    const creatorName = p.createdBy
+      ? (p.createdBy === me?.uid
+          ? (myProfile?.name || me?.displayName || me?.email?.split('@')[0] || p.createdBy.slice(0,6))
+          : (members[p.createdBy]?.name || p.createdBy.slice(0,6)))
+      : '';
     const creatorLabel = creatorName ? ` · ${creatorName}` : '';
     const gidForOp = p._gid || groupId;
     return `
@@ -2408,6 +2462,9 @@ async function notifyAdminArrival(pointName, lat, lng) {
     });
   }
   try { await batch.commit(); } catch(e) { /* fail silently */ }
+  // FCM push for when Chrome is closed
+  const fcmArrivalMsg = '📍 ' + memberName + ' ' + t('arriveAt') + ': ' + pointName;
+  sendFCMToUsers(others, '📍 Family Location', fcmArrivalMsg, 'arrival-fcm').catch(()=>{});
 }
 
 // Admin listens to arrival notifications
@@ -3759,6 +3816,9 @@ function triggerSOS() {
   if ('serviceWorker' in navigator && 'SyncManager' in window) {
     navigator.serviceWorker.ready.then(reg => reg.sync.register('sos-check').catch(()=>{})).catch(()=>{});
   }
+  // Send FCM push to all members (works even when Chrome is closed)
+  const fcmTargets = (groupData?.members || []).filter(uid => uid !== me.uid);
+  sendFCMToUsers(fcmTargets, '🚨 SOS!', myName + ' צריך/ה עזרה!', 'sos-fcm-' + me.uid).catch(()=>{});
   showToastLong(t('sosSent'), 'err');
 }
 
