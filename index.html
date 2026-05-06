@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.3";
+const APP_VERSION        = "2.5.4";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -2049,10 +2049,16 @@ function openAddPointModal(lat, lng) {
   // Build group selector only when user belongs to multiple groups
   const gids = Object.keys(allGroupsData);
   const groupSel = gids.length > 1
-    ? `<div class="fg"><label class="fl">קבוצה</label>
-         <select class="fi" id="mPtGroup">
-           ${gids.map(gid => `<option value="${gid}"${gid===groupId?' selected':''}>${allGroupsData[gid]?.name||gid.slice(0,8)}</option>`).join('')}
-         </select></div>`
+    ? `<div class="fg"><label class="fl">קבוצות</label>
+         <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
+           ${gids.map(gid => `
+             <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;font-weight:500">
+               <input type="checkbox" class="mPtGrpCb" value="${gid}"
+                 ${gid===groupId?'checked':''}
+                 style="width:18px;height:18px;cursor:pointer;accent-color:var(--primary)">
+               ${allGroupsData[gid]?.name||gid.slice(0,8)}
+             </label>`).join('')}
+         </div></div>`
     : '';
   const html = `
     <div class="mttl">${t('addPt')}</div>
@@ -2076,11 +2082,15 @@ async function savePoint(lat, lng) {
   const name   = document.getElementById('mPtName')?.value.trim();
   const radius = parseInt(document.getElementById('mPtRadius')?.value) || 200;
   if (!name) return;
-  // Use explicitly selected group (if multi-group selector shown), else fallback to groupId
-  const targetGid = document.getElementById('mPtGroup')?.value || groupId;
-  await db.collection('groups').doc(targetGid).collection('points').add({
-    name, lat, lng, radius, createdBy: me.uid, createdAt: new Date()
-  });
+  // Collect all checked groups (checkboxes), fallback to groupId
+  const cbs = document.querySelectorAll('.mPtGrpCb:checked');
+  const targetGids = cbs.length > 0 ? [...cbs].map(cb=>cb.value) : [groupId];
+  if (!targetGids.length) { showToast('בחר לפחות קבוצה אחת','err'); return; }
+  await Promise.all(targetGids.map(gid =>
+    db.collection('groups').doc(gid).collection('points').add({
+      name, lat, lng, radius, createdBy: me.uid, createdAt: new Date()
+    })
+  ));
   closeModal();
   showToastLong('✅ '+name,'ok');
   switchTab('points');
@@ -2183,28 +2193,45 @@ function renderPoints() {
       <div class="point-ico">📍</div>
       <div class="point-info">
         <div class="point-name">${esc(p.name)}</div>
-        <div class="point-sub">${t('radiusM')}${p.radius}${t('meters')}${creatorLabel}</div>
+        <div class="point-sub">${t('radiusM')}${p.radius}${t('meters')}${creatorLabel}${Object.keys(allGroupsData).length>1?' · '+(allGroupsData[p._gid]?.name||''):''}</div>
       </div>
       <div class="point-actions">
         <button class="small-btn" onclick="flyToPoint(${p.lat},${p.lng})">🗺️</button>
-        <button class="small-btn" onclick="openEditPoint('${p.id}','${esc(p.name)}',${p.radius},'${gidForOp}')">✏️</button>
+        <button class="small-btn" onclick="openEditPoint('${p.id}','${esc(p.name)}',${p.radius},'${gidForOp}',${p.lat},${p.lng})">✏️</button>
         ${canDelete ? `<button class="small-btn del" onclick="deletePoint('${p.id}','${gidForOp}')">🗑️</button>` : ''}
       </div>
     </div>`;
   }).join('');
 }
 
-function openEditPoint(id, name, radius, gid) {
-  const targetGid = gid || groupId;
+function openEditPoint(id, name, radius, gid, lat, lng) {
+  const currentGid = gid || groupId;
+  const allGids = Object.keys(allGroupsData);
+  // Multi-group checkboxes — shown only when user belongs to multiple groups
+  const groupSection = allGids.length > 1
+    ? `<div class="fg"><label class="fl">קבוצות</label>
+         <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
+           ${allGids.map(g => `
+             <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;font-weight:500">
+               <input type="checkbox" class="ePtGrpCb" value="${g}"
+                 ${g===currentGid?'checked':''}
+                 style="width:18px;height:18px;cursor:pointer;accent-color:var(--primary)">
+               ${allGroupsData[g]?.name||g.slice(0,8)}
+             </label>`).join('')}
+         </div></div>`
+    : '';
   openModal(`
     <div class="mttl">${t('editPt')}</div>
+    ${groupSection}
+    <input type="hidden" id="ePtLat" value="${lat||''}">
+    <input type="hidden" id="ePtLng" value="${lng||''}">
     <div class="fg"><label class="fl">${t('ptName')}</label>
       <input class="fi" type="text" id="ePtName" value="${esc(name)}"></div>
     <div class="fg"><label class="fl">${t('ptRadius')}</label>
       <input class="fi" type="number" id="ePtRadius" value="${radius}" min="10" max="5000"></div>
     <div class="row mt16">
       <button class="btn btn-s flex1" onclick="closeModal()">${t('cancel')}</button>
-      <button class="btn btn-p flex1" onclick="saveEditPoint('${id}','${targetGid}')">${t('save')}</button>
+      <button class="btn btn-p flex1" onclick="saveEditPoint('${id}','${currentGid}')">${t('save')}</button>
     </div>`);
   setTimeout(() => document.getElementById('ePtName')?.focus(), 100);
 }
@@ -2271,10 +2298,16 @@ async function debugPoints() {
 function openAddPointByAddress() {
   const gids = Object.keys(allGroupsData);
   const groupSel = gids.length > 1
-    ? `<div class="fg"><label class="fl">קבוצה</label>
-         <select class="fi" id="mPtGroupAddr">
-           ${gids.map(gid => `<option value="${gid}"${gid===groupId?' selected':''}>${allGroupsData[gid]?.name||gid.slice(0,8)}</option>`).join('')}
-         </select></div>`
+    ? `<div class="fg"><label class="fl">קבוצות</label>
+         <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
+           ${gids.map(gid => `
+             <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;font-weight:500">
+               <input type="checkbox" class="mPtGrpAddrCb" value="${gid}"
+                 ${gid===groupId?'checked':''}
+                 style="width:18px;height:18px;cursor:pointer;accent-color:var(--primary)">
+               ${allGroupsData[gid]?.name||gid.slice(0,8)}
+             </label>`).join('')}
+         </div></div>`
     : '';
   openModal(`
     <div class="mttl">📍 הוסף נקודה לפי כתובת</div>
@@ -2319,10 +2352,13 @@ async function geocodeAndSavePoint() {
     const lat = parseFloat(results[0].lat);
     const lng = parseFloat(results[0].lon);
     const ptName = name || results[0].display_name.split(',')[0];
-    const targetGid = document.getElementById('mPtGroupAddr')?.value || groupId;
-    await db.collection('groups').doc(targetGid).collection('points').add({
-      name: ptName, lat, lng, radius, createdBy: me.uid, createdAt: new Date()
-    });
+    const geoCbs = document.querySelectorAll('.mPtGrpAddrCb:checked');
+    const geoGids = geoCbs.length > 0 ? [...geoCbs].map(cb=>cb.value) : [groupId];
+    await Promise.all(geoGids.map(gid =>
+      db.collection('groups').doc(gid).collection('points').add({
+        name: ptName, lat, lng, radius, createdBy: me.uid, createdAt: new Date()
+      })
+    ));
     closeModal();
     showToastLong('✅ ' + ptName, 'ok');
     switchTab('map');
@@ -2334,14 +2370,46 @@ async function geocodeAndSavePoint() {
   }
 }
 
-async function saveEditPoint(id, gid) {
+async function saveEditPoint(id, currentGid) {
   const name   = document.getElementById('ePtName')?.value.trim();
-  const radius = parseInt(document.getElementById('ePtRadius')?.value) || 20;
+  const radius = parseInt(document.getElementById('ePtRadius')?.value) || 200;
   if (!name) return;
-  const targetGid = gid || groupId;
-  await db.collection('groups').doc(targetGid).collection('points').doc(id).update({ name, radius });
-  closeModal();
-  showToast('✅ '+name,'ok');
+  const lat = parseFloat(document.getElementById('ePtLat')?.value) || null;
+  const lng = parseFloat(document.getElementById('ePtLng')?.value) || null;
+
+  // Determine selected groups from checkboxes (fallback: current group only)
+  const cbs = document.querySelectorAll('.ePtGrpCb');
+  const selectedGids = cbs.length > 0
+    ? [...cbs].filter(cb => cb.checked).map(cb => cb.value)
+    : [currentGid];
+
+  // Must keep at least one group
+  if (selectedGids.length === 0) { showToast('בחר לפחות קבוצה אחת','err'); return; }
+
+  try {
+    // Update or delete from current group
+    if (selectedGids.includes(currentGid)) {
+      await db.collection('groups').doc(currentGid).collection('points').doc(id).update({ name, radius });
+    } else {
+      // Removed from current group — delete it
+      await db.collection('groups').doc(currentGid).collection('points').doc(id).delete();
+    }
+    // Add to newly selected groups (copies)
+    await Promise.all(
+      selectedGids
+        .filter(gid => gid !== currentGid)
+        .map(gid => db.collection('groups').doc(gid).collection('points').add({
+          name, radius,
+          lat: lat || 0, lng: lng || 0,
+          createdBy: me.uid, createdAt: new Date()
+        }))
+    );
+    closeModal();
+    showToast('✅ ' + name, 'ok');
+  } catch(e) {
+    console.error('saveEditPoint error', e);
+    showToast('❌ שגיאה: ' + (e.message||e.code), 'err');
+  }
 }
 
 function syncPointMarkers() {
