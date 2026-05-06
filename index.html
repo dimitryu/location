@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.9";
+const APP_VERSION        = "2.5.10";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -641,8 +641,13 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.9</div>
+  <div class="lver" id="lVer">v2.5.10</div>
   <div class="lsp"></div>
+  <div id="stuckBtn" style="display:none;margin-top:28px">
+    <button onclick="forceUpdate()" style="background:rgba(255,255,255,0.2);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:20px;padding:10px 22px;font-size:14px;cursor:pointer;font-family:inherit">
+      🔄 תקוע? לחץ לרענון
+    </button>
+  </div>
 </div>
 
 <!-- ══════════ AUTH ══════════ -->
@@ -4691,6 +4696,29 @@ function loadCachedMembers() {
     if (raw) Object.assign(members, JSON.parse(raw));
   } catch(e) {}
 }
+
+async function forceUpdate() {
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+  } catch(e) {}
+  location.replace(location.href.split('?')[0] + '?bust=' + Date.now());
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Show "stuck?" button after 6 seconds if still on loading screen
+  setTimeout(() => {
+    const btn = document.getElementById('stuckBtn');
+    const loading = document.getElementById('vLoading');
+    if (btn && loading && loading.style.display !== 'none' && !loading.hidden) {
+      btn.style.display = 'block';
+    }
+  }, 6000);
+});
 
 document.addEventListener('DOMContentLoaded', () => {
   const savedLang = localStorage.getItem('lang') || 'he';
