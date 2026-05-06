@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.0";
+const APP_VERSION        = "2.5.1";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -2079,26 +2079,63 @@ async function deletePoint(id, gid) {
   showToast(t('del'),'ok');
 }
 
-function subPoints() {
+function subPoints(clearMarkers) {
   if (unsubPts) { unsubPts(); unsubPts = null; }
   points = [];
-  const gids = Object.keys(allGroupsData).length > 0 ? Object.keys(allGroupsData) : (groupId ? [groupId] : []);
-  if (!gids.length) return;
-  const retryTimers = {};
-  const activeUnsubs = {};
+  // Optionally clear stale map markers so they re-render cleanly
+  if (clearMarkers && mapObj) {
+    Object.values(pointMarkersMap).forEach(({marker, circle}) => {
+      if (marker) mapObj.removeLayer(marker);
+      if (circle) mapObj.removeLayer(circle);
+    });
+    pointMarkersMap = {};
+  }
 
+  const gids = Object.keys(allGroupsData).length > 0
+    ? Object.keys(allGroupsData)
+    : (groupId ? [groupId] : []);
+  if (!gids.length) return;
+
+  const retryTimers  = {};
+  const activeUnsubs = {};
+  let retryCount = {};
+
+  // ── One-time fetch first (visible immediately even if listener lags) ──
+  gids.forEach(gid => {
+    db.collection('groups').doc(gid).collection('points').get()
+      .then(snap => {
+        points = points.filter(p => p._gid !== gid);
+        points.push(...snap.docs.map(d => ({ id: d.id, _gid: gid, ...d.data() })));
+        renderPoints();
+        syncPointMarkers();
+      })
+      .catch(err => {
+        console.warn('subPoints getDocs error', gid, err?.code);
+        if (err?.code === 'permission-denied') {
+          showToast('⚠️ אין גישה לניקודות (חוקי Firestore)', 'err');
+        }
+      });
+  });
+
+  // ── Real-time listener (keeps syncing new changes) ──
   function subscribeToGroup(gid) {
     if (activeUnsubs[gid]) { activeUnsubs[gid](); delete activeUnsubs[gid]; }
     activeUnsubs[gid] = db.collection('groups').doc(gid).collection('points').onSnapshot(snap => {
       if (retryTimers[gid]) { clearTimeout(retryTimers[gid]); delete retryTimers[gid]; }
+      retryCount[gid] = 0;
       points = points.filter(p => p._gid !== gid);
       points.push(...snap.docs.map(d => ({ id: d.id, _gid: gid, ...d.data() })));
       renderPoints();
       syncPointMarkers();
     }, err => {
-      console.warn('subPoints error for', gid, err?.code);
-      // Auto-retry after 5 seconds in case rules propagate or token refreshes
-      retryTimers[gid] = setTimeout(() => subscribeToGroup(gid), 5000);
+      console.warn('subPoints listener error', gid, err?.code);
+      if (err?.code === 'permission-denied') {
+        showToast('⚠️ אין גישה לניקודות — נדרש עדכון חוקי Firestore', 'err');
+      }
+      // Exponential backoff: 5s, 10s, 20s, then every 30s
+      retryCount[gid] = (retryCount[gid] || 0) + 1;
+      const delay = Math.min(5000 * Math.pow(2, retryCount[gid] - 1), 30000);
+      retryTimers[gid] = setTimeout(() => subscribeToGroup(gid), delay);
     });
   }
 
@@ -2261,8 +2298,8 @@ function flyToPoint(lat, lng) {
 }
 
 function refreshMap() {
-  subPoints();
-  showToast('🔄 מרענן...', 'ok');
+  subPoints(true); // true = clear stale map markers
+  showToast('🔄 מרענן ניקודות...', 'ok');
 }
 
 // ══════════════════════════════════════════════
