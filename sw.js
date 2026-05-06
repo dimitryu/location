@@ -1,7 +1,7 @@
 // ╔══════════════════════════════════════════╗
-// ║  Family Location — Service Worker v1.6.0 ║
+// ║  Family Location — Service Worker v2.1.0 ║
 // ╚══════════════════════════════════════════╝
-const CACHE = 'family-location-v2.0.7';
+const CACHE = 'family-location-v2.1.0';
 const ASSETS = [
   './',
   './index.html',
@@ -52,33 +52,19 @@ self.addEventListener('fetch', e => {
 });
 
 // ── Periodic Background Sync ──
-// Wakes up the SW when installed as PWA; tells any open tab to push GPS
+// On Android PWA: wakes SW periodically, tells open tabs to push GPS.
+// If no tabs are open: shows a silent notification to keep the app alive.
 self.addEventListener('periodicsync', e => {
   if (e.tag === 'location-update') {
     e.waitUntil(
       self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
         if (clients.length > 0) {
+          // App is open — ask it to push location
           clients.forEach(c => c.postMessage({ type: 'SW_REQUEST_LOCATION' }));
-        }
-      })
-    );
-  }
-});
-
-// Push notifications
-self.addEventListener('push', e => {
-  const data = e.data?.json() || { title: 'Family Tracker', body: '' };
-  e.waitUntil(
-    self.registration.showNotification(data.title || 'Family Tracker', {
-      body: data.body,
-      icon: './icon.svg',
-      badge: './icon.svg',
-      vibrate: [200, 100, 200]
-    })
-  );
-});
-
-self.addEventListener('notificationclick', e => {
-  e.notification.close();
-  e.waitUntil(clients.openWindow('./'));
-});
+        } else {
+          // App is closed — show a low-priority notification to keep tracking alive.
+          // User can tap to open the app and resume GPS.
+          self.registration.showNotification('📍 Family Location', {
+            body: 'לחץ לפתיחת האפליקציה לעדכון מיקום',
+            icon: './icon.svg',
+            badge: './i

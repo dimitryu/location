@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.0.7";
+const APP_VERSION        = "2.1.0";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -1042,6 +1042,7 @@ let unsubNotifs = null;
 let myGroupsList = [];
 let metricsGroupsCollapsed = {};
 let logViewUid = null;
+let currentStayLogDocId = null;  // tracks active stay log Firestore doc for in-place updates
 const SPEED_ALERT_MS = 33;   // m/s ≈ 120 km/h
 const TILE_LIGHT = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 const TILE_DARK  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
@@ -1391,6 +1392,7 @@ async function doGoogle() {
 async function doLogout() {
   stopTracking();
   unsubAll();
+  stayCandidate = null; currentStayLogDocId = null;
   groupId = null; groupData = null;
   members = {}; points = [];
   await auth.signOut();
@@ -1498,13 +1500,14 @@ async function initApp() {
 }
 
 function unsubAll() {
-  if (unsubLocs) { unsubLocs(); unsubLocs = null; }
-  if (unsubPts)  { unsubPts();  unsubPts  = null; }
-  if (unsubGrp)  { unsubGrp();  unsubGrp  = null; }
-  if (unsubAdminNotifs) { unsubAdminNotifs(); unsubAdminNotifs = null; }
-  if (unsubChat) { unsubChat(); unsubChat = null; }
-  if (unsubSOS)    { unsubSOS();    unsubSOS    = null; }
-  if (unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
+  if (unsubLocs)         { unsubLocs();         unsubLocs         = null; }
+  if (unsubPts)          { unsubPts();           unsubPts          = null; }
+  if (unsubGrp)          { unsubGrp();           unsubGrp          = null; }
+  if (unsubAdminNotifs)  { unsubAdminNotifs();   unsubAdminNotifs  = null; }
+  if (unsubMemberNotifs) { unsubMemberNotifs();  unsubMemberNotifs = null; }
+  if (unsubChat)         { unsubChat();          unsubChat         = null; }
+  if (unsubSOS)          { unsubSOS();           unsubSOS          = null; }
+  if (unsubNotifs)       { unsubNotifs();        unsubNotifs       = null; }
   locationUnsubs.forEach(fn => fn()); locationUnsubs = [];
   groupEventUnsubs.forEach(fn => fn()); groupEventUnsubs = [];
   activeSosBanners = {};
@@ -1568,9 +1571,7 @@ async function loadGroup() {
           activeSosBanners[bannerKey] = { name: newD.sosName || '?', uid: newD.sosUid, isMine: false };
           updateSOSBanner();
           playSOSAlert();
-          if (Notification.permission === 'granted') {
-            new Notification('🆘 SOS!', { body: `${newD.sosName || '?'} צריך/ה עזרה!`, icon: './icon.svg' });
-          }
+          showPushNotif('🆘 SOS!', `${newD.sosName || '?'} צריך/ה עזרה!`, 'sos-banner', [500,200,500,200,500,200,500,200,500]);
         } else if (!newD.sosActive && prevData?.sosActive && prevData?.sosUid !== me?.uid) {
           delete activeSosBanners[bannerKey];
           updateSOSBanner();
@@ -2066,15 +2067,32 @@ function startTracking() {
 
 function onVisibilityChange() {
   if (document.hidden) {
-    // App went to background — start 60s polling
+    // App went to background — poll GPS every 30s to keep location fresh
     bgInterval = setInterval(() => {
       navigator.geolocation.getCurrentPosition(onPosition, onPosErr,
-        { enableHighAccuracy: false, maximumAge: 30000, timeout: 15000 });
-    }, 60000);
+        { enableHighAccuracy: false, maximumAge: 20000, timeout: 15000 });
+    }, 30000);
+    // Request a one-shot background sync (Android Chrome PWA)
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      navigator.serviceWorker.ready.then(reg => {
+        reg.sync.register('location-sync').catch(() => {});
+      }).catch(() => {});
+    }
   } else {
     // App came to foreground — stop bg polling, watchPosition resumes
     if (bgInterval) { clearInterval(bgInterval); bgInterval = null; }
   }
+}
+
+// Register periodic background sync (Android PWA only)
+async function registerPeriodicSync(reg) {
+  if (!reg || !('periodicSync' in reg)) return;
+  try {
+    const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+    if (status.state === 'granted') {
+      await reg.periodicSync.register('location-update', { minInterval: 60 * 1000 }); // 1 min
+    }
+  } catch(e) { /* not supported — no-op */ }
 }
 
 function stopTracking() {
@@ -2082,6 +2100,32 @@ function stopTracking() {
   if (locInterval) { clearInterval(locInterval); locInterval = null; }
   if (bgInterval)  { clearInterval(bgInterval); bgInterval = null; }
   document.removeEventListener('visibilitychange', onVisibilityChange);
+}
+
+// ══════════════════════════════════════════════
+//  PUSH NOTIFICATION HELPER
+//  Uses registration.showNotification() (works in background tab)
+//  Falls back to new Notification() when SW unavailable
+// ══════════════════════════════════════════════
+async function showPushNotif(title, body, tag, vibrate) {
+  const opts = {
+    body,
+    icon: './icon.svg',
+    badge: './icon.svg',
+    tag: tag || 'family-notif',
+    vibrate: vibrate || [200, 100, 200],
+    requireInteraction: false
+  };
+  if ('serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification(title, opts);
+      return;
+    } catch(e) { /* fall through */ }
+  }
+  if (Notification.permission === 'granted') {
+    try { new Notification(title, opts); } catch(e) {}
+  }
 }
 
 function onPosition(pos) {
@@ -2301,34 +2345,74 @@ function checkGeofencing(lat, lng) {
   });
 }
 
-// Send arrival notification to admin via Firestore (admin client listens)
+// Notify ALL group members about a POI arrival (not just admin)
 async function notifyAdminArrival(pointName, lat, lng) {
   if (!me || !groupId || !groupData) return;
-  const adminUid = groupData.adminUid;
-  if (!adminUid || adminUid === me.uid) return; // don't notify if I AM the admin
   const memberName = myProfile?.name || me.email;
-  try {
-    await db.collection('adminNotifs').add({
-      groupId, adminUid,
+  const allMembers = groupData.members || [];
+  const others = allMembers.filter(uid => uid !== me.uid);
+  if (!others.length) return;
+  // Write one notification doc per recipient so each member's listener fires
+  const batch = db.batch();
+  const notifCol = db.collection('groups').doc(groupId).collection('memberNotifs');
+  others.forEach(toUid => {
+    const ref = notifCol.doc();
+    batch.set(ref, {
       type: 'arrival',
-      memberUid: me.uid,
+      fromUid: me.uid,
       memberName,
       pointName,
+      toUid,
       lat, lng,
       ts: firebase.firestore.FieldValue.serverTimestamp(),
       seen: false
     });
-  } catch(e) { /* fail silently */ }
+  });
+  // Keep legacy adminNotifs for admin devices already subscribed
+  const adminUid = groupData.adminUid;
+  if (adminUid && adminUid !== me.uid) {
+    batch.set(db.collection('adminNotifs').doc(), {
+      groupId, adminUid,
+      type: 'arrival',
+      memberUid: me.uid, memberName, pointName, lat, lng,
+      ts: firebase.firestore.FieldValue.serverTimestamp(), seen: false
+    });
+  }
+  try { await batch.commit(); } catch(e) { /* fail silently */ }
 }
 
 // Admin listens to arrival notifications
 let unsubAdminNotifs = null;
+let unsubMemberNotifs = null;
+
 function subAdminNotifications() {
   if (!me || !groupId) return;
   if (unsubAdminNotifs) { unsubAdminNotifs(); unsubAdminNotifs = null; }
+  if (unsubMemberNotifs) { unsubMemberNotifs(); unsubMemberNotifs = null; }
+
+  // ── memberNotifs: arrival notifications for EVERY group member ──
+  unsubMemberNotifs = db.collection('groups').doc(groupId)
+    .collection('memberNotifs')
+    .where('toUid', '==', me.uid)
+    .where('seen', '==', false)
+    .onSnapshot(snap => {
+      snap.docs.forEach(doc => {
+        const n = doc.data();
+        const ts = n.ts?.toDate ? n.ts.toDate() : new Date();
+        if (Date.now() - ts.getTime() < 300000) {
+          const msg = `📍 ${n.memberName} ${t('arriveAt')}: ${n.pointName}`;
+          showToastLong(msg, 'ok');
+          if (notifEnabled) {
+            showPushNotif('📍 Family Location', msg, 'arrival-mem-' + doc.id);
+          }
+        }
+        doc.ref.update({ seen: true }).catch(()=>{});
+      });
+    });
+
+  // ── adminNotifs: legacy path kept for admin-specific alerts ──
   const isAdmin = groupData?.adminUid === me.uid;
   if (!isAdmin) return;
-  // Listen for new unseen notifications for me as admin
   unsubAdminNotifs = db.collection('adminNotifs')
     .where('adminUid','==',me.uid)
     .where('groupId','==',groupId)
@@ -2337,19 +2421,17 @@ function subAdminNotifications() {
       snap.docs.forEach(doc => {
         const n = doc.data();
         const ts = n.ts?.toDate ? n.ts.toDate() : new Date();
-        // Only show notifications from last 5 minutes
         if (Date.now() - ts.getTime() < 300000) {
-          const msg = `📍 ${n.memberName} ${t('arriveAt')}: ${n.pointName}`;
-          showToastLong(msg, 'ok');
-          if (notifEnabled && Notification.permission === 'granted') {
-            new Notification('📍 Family Location', {
-              body: msg,
-              icon: 'icons/icon-192.png',
-              vibrate: [200, 100, 200]
-            });
+          const msg = n.type === 'batteryLow'
+            ? `🔋 ${n.memberName} — ${t('battLow')} (${n.battery}%)`
+            : n.type === 'speed'
+              ? `🚨 ${n.memberName} — ${t('speedAlert')} (${n.speed} km/h)`
+              : '';
+          if (msg && notifEnabled) {
+            showToastLong(msg, 'err');
+            showPushNotif('📍 Family Location', msg, 'admin-notif-' + doc.id);
           }
         }
-        // Mark as seen
         doc.ref.update({ seen: true }).catch(()=>{});
       });
     });
@@ -2358,10 +2440,8 @@ function subAdminNotifications() {
 function sendArrivalNotif(name) {
   if (!notifEnabled) return;
   const msg = `${t('arriveAt')}: ${name}`;
-  showToastLong('📍 '+msg,'ok');
-  if (Notification.permission === 'granted') {
-    new Notification('📍 Family Location', { body: msg, icon: 'icons/icon.svg' });
-  }
+  showToastLong('📍 ' + msg, 'ok');
+  showPushNotif('📍 Family Location', msg, 'arrival-self');
 }
 
 function haversine(lat1, lon1, lat2, lon2) {
@@ -2965,15 +3045,33 @@ async function updateMetrics(lat, lng, motion) {
   // ── Stay detection for log ──
   if (!stayCandidate) {
     stayCandidate = { lat, lng, startTs: now, motion };
+    currentStayLogDocId = null;
   } else {
     const moved = haversine(stayCandidate.lat, stayCandidate.lng, lat, lng);
     if (moved > STAY_DIST_M) {
-      // User moved — check if previous stay was long enough
+      // User has moved away — finalize the current stay log if it was ≥30 min
       const duration = now - stayCandidate.startTs;
       if (duration >= STAY_MIN_MS) {
-        saveLocationLog(stayCandidate.lat, stayCandidate.lng, stayCandidate.startTs, now);
+        if (currentStayLogDocId) {
+          // Update the existing row with final end time
+          db.collection('locationLog').doc(currentStayLogDocId).update({
+            endTs: now,
+            durationMin: Math.round(duration / 60000)
+          }).catch(()=>{});
+        } else {
+          // No row yet — create it now
+          saveLocationLog(stayCandidate.lat, stayCandidate.lng, stayCandidate.startTs, now);
+        }
       }
+      // Start tracking new stay
       stayCandidate = { lat, lng, startTs: now, motion };
+      currentStayLogDocId = null;
+    } else {
+      // Still at same location — if ≥30 min, write/update the log row
+      const duration = now - stayCandidate.startTs;
+      if (duration >= STAY_MIN_MS) {
+        updateActiveStayLog(stayCandidate.lat, stayCandidate.lng, stayCandidate.startTs, now);
+      }
     }
   }
 
@@ -2996,7 +3094,8 @@ async function updateMetrics(lat, lng, motion) {
 }
 
 async function saveLocationLog(lat, lng, startTs, endTs) {
-  const today = new Date().toISOString().slice(0,10);
+  if (!me || !groupId) return;
+  const today = new Date(startTs).toISOString().slice(0,10);
   const durationMin = Math.round((endTs - startTs) / 60000);
   // Reverse geocode via Nominatim (OSM)
   let address = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
@@ -3009,11 +3108,31 @@ async function saveLocationLog(lat, lng, startTs, endTs) {
       address = j.display_name?.split(',').slice(0,3).join(', ') || address;
     }
   } catch(e) {}
-  const entry = { lat, lng, address, startTs, endTs, durationMin, date: today };
-  db.collection('locationLog').add({
-    uid: me.uid, groupId, name: myProfile?.name || me.email,
-    ...entry, createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  }).catch(()=>{});
+  try {
+    const ref = await db.collection('locationLog').add({
+      uid: me.uid, groupId,
+      name: myProfile?.name || me.email,
+      lat, lng, address,
+      startTs, endTs, durationMin, date: today,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    currentStayLogDocId = ref.id;  // remember so we can update in-place
+  } catch(e) { /* fail silently */ }
+}
+
+// Called on every GPS tick while user is still at the same location (≥30 min).
+// Creates the log row if it doesn't exist yet; otherwise updates endTs + duration.
+async function updateActiveStayLog(lat, lng, startTs, endTs) {
+  if (currentStayLogDocId) {
+    // Just update the times — no new row
+    const durationMin = Math.round((endTs - startTs) / 60000);
+    db.collection('locationLog').doc(currentStayLogDocId).update({
+      endTs, durationMin
+    }).catch(()=>{});
+  } else {
+    // First time hitting 30 min — create the row
+    await saveLocationLog(lat, lng, startTs, endTs);
+  }
 }
 
 function renderMetricCard(m, isAdmin) {
@@ -3517,17 +3636,7 @@ async function checkForUpdate() {
   } catch(e) { /* network error — skip silently */ }
 }
 
-// ══════════════════════════════════════════════
-//  PERIODIC BACKGROUND SYNC (installed PWA only)
-// ══════════════════════════════════════════════
-async function registerPeriodicSync(reg) {
-  if (!('periodicSync' in reg)) return;
-  try {
-    const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
-    if (status.state !== 'granted') return;
-    await reg.periodicSync.register('location-update', { minInterval: 60 * 1000 });
-  } catch(e) {}
-}
+// registerPeriodicSync is defined near onVisibilityChange above
 
 // ══════════════════════════════════════════════
 //  PRIVACY: cycle visible → quiet → hidden
@@ -3640,9 +3749,7 @@ function subSOS() {
           updateSOSBanner();
           if (!isMine) {
             playSOSAlert();
-            if (Notification.permission === 'granted') {
-              new Notification('🆘 SOS!', { body: `${d.name} צריך/ה עזרה!`, icon: './icon.svg' });
-            }
+            showPushNotif('🆘 SOS!', `${d.name} צריך/ה עזרה!`, 'sos-' + change.doc.id, [500,200,500,200,500,200,500,200,500]);
             if (mapObj && d.lat && d.lng) {
               const icon = L.divIcon({ className:'', iconSize:[46,46], iconAnchor:[23,23], html:`<div class="sos-marker">🆘</div>` });
               L.marker([d.lat, d.lng], {icon}).addTo(mapObj).bindPopup(`<b>🆘 SOS</b><br>${esc(d.name)}`).openPopup();
@@ -3682,9 +3789,7 @@ function subGroupEvents() {
           if (d.type === 'arrival') {
             const msg = `📍 ${esc(d.name)} — ${t('arriveAt')}: ${esc(d.pointName)}`;
             showToastLong(msg, 'ok');
-            if (Notification.permission === 'granted') {
-              new Notification('📍 Family Location', { body: msg, icon: './icon.svg' });
-            }
+            showPushNotif('📍 Family Location', msg, 'arrival-' + (d.uid || ''));
           }
         });
       });
@@ -3693,22 +3798,43 @@ function subGroupEvents() {
 }
 
 function playSOSAlert() {
-  // Vibrate 10 seconds pattern
-  if (navigator.vibrate) navigator.vibrate([400,150,400,150,400,150,400,150,400,150,400,150,400,150,400,150,400,150,400]);
-  // Beeping sound via Web Audio API — 10 seconds (20 beeps × 0.5s)
+  // Max vibration — 15 seconds pattern
+  if (navigator.vibrate) navigator.vibrate([
+    600,150,600,150,600,150,
+    600,150,600,150,600,150,
+    600,150,600,150,600,150,
+    600,150,600,150,600,150,
+    600,150,600,150,600,150
+  ]);
+  // Maximum-volume alarm via Web Audio API — 15 seconds (30 beeps × 0.5s)
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    for (let i = 0; i < 20; i++) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = 'square';
-      osc.frequency.value = i % 2 === 0 ? 880 : 660;
-      gain.gain.setValueAtTime(0.4, ctx.currentTime + i * 0.5);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.5 + 0.45);
-      osc.start(ctx.currentTime + i * 0.5);
-      osc.stop(ctx.currentTime + i * 0.5 + 0.45);
-    }
+    // Unlock audio context on mobile (required after user gesture)
+    const resume = ctx.state === 'suspended' ? ctx.resume() : Promise.resolve();
+    resume.then(() => {
+      // Build a compressor to push audio harder without clipping
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.value = -6;
+      compressor.knee.value = 0;
+      compressor.ratio.value = 20;
+      compressor.attack.value = 0;
+      compressor.release.value = 0.1;
+      compressor.connect(ctx.destination);
+
+      for (let i = 0; i < 30; i++) {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(compressor);
+        // Alternating high-pitched alarm tones — most piercing frequencies
+        osc.type = 'sawtooth';
+        osc.frequency.value = i % 3 === 0 ? 1400 : i % 3 === 1 ? 1000 : 1700;
+        gain.gain.setValueAtTime(1.0, ctx.currentTime + i * 0.5);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.5 + 0.45);
+        osc.start(ctx.currentTime + i * 0.5);
+        osc.stop(ctx.currentTime + i * 0.5 + 0.46);
+      }
+    }).catch(()=>{});
   } catch(e) {}
 }
 
@@ -3931,9 +4057,10 @@ function subNotifications() {
         if (d.fromUid === me.uid) return;
         if (d.type === 'batteryLow') {
           showToastLong(d.msg, 'err');
-          if (Notification.permission === 'granted') {
-            new Notification('🔋 ' + t('battLow'), { body: d.msg, icon: './icon.svg' });
-          }
+          showPushNotif('🔋 ' + t('battLow'), d.msg, 'batt-' + change.doc.id);
+        } else if (d.type === 'arrival') {
+          showToastLong(d.msg || '', 'ok');
+          showPushNotif('📍 Family Location', d.msg || '', 'arrival-notif-' + change.doc.id);
         }
       });
       updateNotifBell();
@@ -3954,13 +4081,12 @@ async function openNotifHistory() {
   if (!snap) return;
   const rows = snap.docs.map(d => {
     const n = d.data();
-    // Non-admin sees only broadcast (toUid=null) or messages to them
     if (!isAdmin && n.toUid && n.toUid !== me.uid && n.fromUid !== me.uid) return '';
     const ts = n.ts?.toDate ? n.ts.toDate().toLocaleString([], {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
     const typeIcon = n.type==='sos'?'🆘':n.type==='batteryLow'?'🔋':n.type==='speed'?'🚨':n.type==='arrival'?'📍':'🔔';
     return `<div class="notif-item">
       <div style="font-weight:700">${typeIcon} ${esc(n.msg||'')}</div>
-      <div class="notif-time">${esc(n.fromName||'')} · ${ts}</div>
+      <div class="notif-time">${esc(n.fromName||'')} Â· ${ts}</div>
     </div>`;
   }).join('');
   openModal(`
@@ -3981,7 +4107,7 @@ function notifySpeedAlert(speed) {
   lastSpeedAlert = now;
   const kmh = Math.round(speed * 3.6);
   const myName = myProfile?.name || me.email;
-  showToastLong(`🚨 ${t('speedAlert')} · ${kmh} km/h`, 'err');
+  showToastLong(`🚨 ${t('speedAlert')} Â· ${kmh} km/h`, 'err');
   saveGroupNotification('speed', myName, `🚨 ${myName} — ${t('speedAlert')} (${kmh} km/h)`, null);
   if (groupData?.adminUid && groupData.adminUid !== me.uid) {
     db.collection('adminNotifs').add({
