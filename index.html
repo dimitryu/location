@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.6";
+const APP_VERSION        = "2.5.7";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -869,7 +869,7 @@ select.lang-sel{
         <div class="sg">
           <div class="sl" id="sAccLbl"></div>
           <div class="si" onclick="editProfile()">
-            <span class="si-ico">👤</span>
+            <span class="si-ico" id="sProfileAv" style="font-size:0;line-height:0;display:flex;align-items:center">👤</span>
             <span class="si-txt" id="sProfile"></span>
             <span class="si-val" id="sMyName"></span>
           </div>
@@ -1085,6 +1085,18 @@ function colorForUid(uid) {
 function initials(name) {
   if (!name) return '?';
   return name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0,2);
+}
+
+function avatarHtml(uid, name, size) {
+  const photo = (uid && me && uid === me.uid)
+    ? (myProfile?.photoBase64 || members[uid]?.photoBase64)
+    : (members[uid]?.photoBase64 || null);
+  const color = colorForUid(uid || 'x');
+  const fs = Math.floor(size * 0.4);
+  if (photo) {
+    return `<img src="${photo}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0;display:block">`;
+  }
+  return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:${fs}px;font-weight:800;color:#fff;flex-shrink:0">${initials(name)}</div>`;
 }
 
 // ══════════════════════════════════════════════
@@ -1775,7 +1787,7 @@ function renderGroupTab() {
         const checked = !rawPerms || rawPerms.length === 0 || rawPerms.includes(uid);
         permsHtml += `
           <div class="perm-row">
-            <div style="width:32px;height:32px;border-radius:50%;background:${colorForUid(uid)};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;flex-shrink:0">${initials(name)}</div>
+            ${avatarHtml(uid, name, 32)}
             <span class="perm-name">${esc(name)}</span>
             <label class="sw">
               <input type="checkbox" ${checked?'checked':''} onchange="togglePermFor('${gid}','${uid}',this.checked)">
@@ -1845,7 +1857,7 @@ function renderPermissions() {
     const checked = !rawPerms || rawPerms.length === 0 || rawPerms.includes(uid);
     el.innerHTML += `
       <div class="perm-row">
-        <div style="width:36px;height:36px;border-radius:50%;background:${colorForUid(uid)};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0">${initials(name)}</div>
+        ${avatarHtml(uid, name, 36)}
         <span class="perm-name">${esc(name)}</span>
         <label class="sw">
           <input type="checkbox" ${checked?'checked':''} onchange="togglePerm('${uid}',this.checked)">
@@ -3171,6 +3183,17 @@ function renderSettings() {
   document.getElementById('sThemeIco').textContent = isDark ? '☀️' : '🌙';
   document.getElementById('sThemeVal').textContent = isDark ? t('dark') : t('light');
   document.getElementById('sMyName').textContent = myProfile?.name || me?.email || '';
+  // Profile avatar
+  const avEl = document.getElementById('sProfileAv');
+  if (avEl && me) {
+    const photo = myProfile?.photoBase64;
+    if (photo) {
+      avEl.innerHTML = `<img src="${photo}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;display:block">`;
+    } else {
+      const name = myProfile?.name || me.email || '?';
+      avEl.innerHTML = `<div style="width:36px;height:36px;border-radius:50%;background:${colorForUid(me.uid)};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff">${initials(name)}</div>`;
+    }
+  }
   // Notifications toggle
   const tog = document.getElementById('notifToggle');
   if (tog) {
@@ -3556,7 +3579,7 @@ function renderMetricCard(m, isAdmin) {
   const battChip = batt !== null && batt !== undefined
     ? `<span class="batt-chip">🔋${batt}%</span>` : '';
   return `<div class="metric-card">
-    <div class="metric-av" style="background:${color}">${initials(m.name||'?')}</div>
+    <div class="metric-av" style="background:${color};overflow:hidden;padding:0">${avatarHtml(m.uid, m.name||'?', 44)}</div>
     <div style="flex:1">
       <div class="metric-name">${esc(m.name||'?')} ${isMe?'<span class="badge bdg-p">'+t('me')+'</span>':''}${battChip}</div>
       <div class="metric-row">
@@ -3821,7 +3844,7 @@ async function loadLocationLog() {
       el.innerHTML += `
         <div style="margin-bottom:14px">
           ${isAdmin && !isMe ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <div style="width:28px;height:28px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff">${initials(name)}</div>
+            ${avatarHtml(uid, name, 28)}
             <span style="font-weight:700;font-size:14px">${esc(name)}</span>
           </div>` : ''}
           <div style="background:var(--card);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);overflow-x:auto">
@@ -4613,28 +4636,4 @@ function loadCachedMembers() {
 document.addEventListener('DOMContentLoaded', () => {
   const savedLang = localStorage.getItem('lang') || 'he';
   lang = savedLang;
-  document.documentElement.setAttribute('lang', savedLang);
-  document.documentElement.setAttribute('dir', savedLang==='he'?'rtl':'ltr');
-  renderUI();
-  initFirebase();
-  initInstallPrompt();
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => registerPeriodicSync(reg))
-      .catch(() => {});
-    // Listen for SW-initiated location requests (Periodic Background Sync)
-    navigator.serviceWorker.addEventListener('message', e => {
-      if (e.data?.type === 'SW_REQUEST_LOCATION') {
-        if (myLat !== null) {
-          pushLocation(myLat, myLng, currentMotion);
-        } else {
-          navigator.geolocation?.getCurrentPosition(onPosition, onPosErr,
-            { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 });
-        }
-      }
-    });
-  }
-});
-</script>
-</body>
-</html>
+  document.documentElement
