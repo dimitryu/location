@@ -71,6 +71,12 @@ service cloud.firestore {
       allow write: if isAuth();
     }
 
+    // ── Daily metrics (steps, distance, motion summary) ──
+    match /metrics/{docId} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+    }
+
     // ── Admin notifications (legacy) ──
     match /adminNotifs/{nid} {
       allow read: if isAuth() && resource.data.adminUid == uid();
@@ -84,10 +90,4 @@ service cloud.firestore {
       allow write: if isAuth();
     }
 
-    // ── App config (FCM server key etc.) — admin only ──
-    match /appConfig/{doc} {
-      allow read: if isAuth();
-      allow write: if false; // write via Firebase Console only
-    }
-  }
-}
+    // ── App config (FCM server 

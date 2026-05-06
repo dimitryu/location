@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.4";
+const APP_VERSION        = "2.5.5";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -3600,7 +3600,7 @@ async function loadMetrics() {
     for (const grp of groupsToLoad) {
       const snap = await db.collection('metrics')
         .where('groupId','==',grp.id).where('date','==',selectedDate).get();
-      const grpIsAdmin = grp.id === groupId ? isAdmin : false;
+      const grpIsAdmin = allGroupsData[grp.id]?.adminUid === me?.uid;
 
       let cardsHtml = '';
       snap.docs.forEach(d => {
@@ -3718,8 +3718,17 @@ async function loadLocationLog() {
     const uidsToLoad = isAdmin
       ? (logViewUid ? [logViewUid] : memberList)
       : [me.uid];
+    // Find correct group prefix per uid (tracks are stored as groupId_uid_date)
+    const uidToGid = {};
+    uidsToLoad.forEach(uid => {
+      // Check all groups user has access to — find one that has this uid as member
+      const match = Object.entries(allGroupsData).find(([gid, gd]) =>
+        (gd.members || []).includes(uid)
+      );
+      uidToGid[uid] = match ? match[0] : groupId;
+    });
     const trackDocs = await Promise.all(
-      uidsToLoad.map(uid => db.collection('tracks').doc(`${groupId}_${uid}_${selectedDate}`).get())
+      uidsToLoad.map(uid => db.collection('tracks').doc(`${uidToGid[uid]}_${uid}_${selectedDate}`).get())
     );
 
     el.innerHTML = '';
