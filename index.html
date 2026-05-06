@@ -2949,7 +2949,7 @@ function confirmDeleteGroup(gid, name) {
     <div class="row mt16">
       <button class="btn btn-s flex1" onclick="closeModal()">ביטול</button>
       <button class="btn flex1" style="background:var(--red);color:#fff" onclick="deleteGroup('${gid}')">מחק קבוצה</button>
-    </div>`);
+    </div>\`);
 }
 
 async function deleteGroup(gid) {
@@ -2957,7 +2957,6 @@ async function deleteGroup(gid) {
   try {
     showToast('🗑️ מוחק קבוצה...', 'ok', 3000);
     const gd = allGroupsData[gid] || {};
-    // Remove groupId from all members
     const memberUids = gd.members || [];
     await Promise.all(memberUids.map(uid =>
       db.collection('users').doc(uid).update({
@@ -2965,9 +2964,7 @@ async function deleteGroup(gid) {
         groups: firebase.firestore.FieldValue.arrayRemove(gid)
       }).catch(() => {})
     ));
-    // Delete group doc
     await db.collection('groups').doc(gid).delete().catch(() => {});
-    // Remove from local state
     delete allGroupsData[gid];
     myGroupsList = myGroupsList.filter(g => g.id !== gid);
     if (groupId === gid) {
@@ -3691,7 +3688,6 @@ async function loadMetrics() {
         if (d && d.exists) {
           cardsHtml += renderMetricCard(d.data(), grpIsAdmin);
         } else if (grpIsAdmin) {
-          // Show empty placeholder card for members with no data today
           const uid = memberUids[idx];
           const mData = members[uid] || {};
           const name = (uid === me?.uid ? myProfile?.name : null) || mData.name || uid.slice(0,8);
@@ -4654,4 +4650,77 @@ function notifySpeedAlert(speed) {
       memberName: myName,
       speed: kmh, lat: myLat, lng: myLng,
       ts: firebase.firestore.FieldValue.serverTimestamp(),
-  
+      seen: false
+    }).catch(()=>{});
+  }
+}
+
+function onLogMemberChange(uid) {
+  logViewUid = uid || null;
+  loadLocationLog();
+}
+
+// ══════════════════════════════════════════════
+//  7-DAY HISTORY NAVIGATION
+// ══════════════════════════════════════════════
+function shiftMetricsDate(days) {
+  const picker = document.getElementById('metDatePicker');
+  if (!picker) return;
+  const current = picker.value || new Date().toISOString().slice(0,10);
+  const d = new Date(current);
+  d.setDate(d.getDate() + days);
+  const newDate = d.toISOString().slice(0,10);
+  const today = new Date().toISOString().slice(0,10);
+  if (newDate > today) return;
+  picker.value = newDate;
+  loadMetrics();
+}
+
+// ══════════════════════════════════════════════
+//  OFFLINE CACHE
+// ══════════════════════════════════════════════
+function cacheMembers() {
+  if (!groupId || !Object.keys(members).length) return;
+  try { localStorage.setItem(`fl_members_${groupId}`, JSON.stringify(members)); } catch(e) {}
+}
+
+function loadCachedMembers() {
+  if (!groupId) return;
+  try {
+    const raw = localStorage.getItem(`fl_members_${groupId}`);
+    if (raw) Object.assign(members, JSON.parse(raw));
+  } catch(e) {}
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const savedLang = localStorage.getItem('lang') || 'he';
+  lang = savedLang;
+  document.documentElement.setAttribute('lang', savedLang);
+  document.documentElement.setAttribute('dir', savedLang==='he'?'rtl':'ltr');
+  renderUI();
+  initFirebase();
+  initInstallPrompt();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => registerPeriodicSync(reg))
+      .catch(() => {});
+    // Auto-reload when new SW activates (ensures users always get latest version)
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload();
+    });
+    // Listen for SW-initiated location requests (Periodic Background Sync)
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data?.type === 'SW_REQUEST_LOCATION') {
+        if (myLat !== null) {
+          pushLocation(myLat, myLng, currentMotion);
+        } else {
+          navigator.geolocation?.getCurrentPosition(onPosition, onPosErr,
+            { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 });
+        }
+      }
+    });
+  }
+});
+</script>
+</body>
+</html>
