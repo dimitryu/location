@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.10";
+const APP_VERSION        = "2.5.11";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -641,13 +641,15 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.10</div>
+  <div class="lver" id="lVer">v2.5.11</div>
   <div class="lsp"></div>
-  <div id="stuckBtn" style="display:none;margin-top:28px">
-    <button onclick="forceUpdate()" style="background:rgba(255,255,255,0.2);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:20px;padding:10px 22px;font-size:14px;cursor:pointer;font-family:inherit">
-      🔄 תקוע? לחץ לרענון
-    </button>
-  </div>
+</div>
+
+<!-- Fixed "stuck?" overlay — always on top, independent of app state -->
+<div id="stuckBtn" style="display:none;position:fixed;bottom:40px;left:50%;transform:translateX(-50%);z-index:9999">
+  <button onclick="forceUpdate()" style="background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);border:1.5px solid rgba(255,255,255,0.4);color:#fff;border-radius:24px;padding:12px 28px;font-size:15px;cursor:pointer;font-family:inherit;white-space:nowrap">
+    🔄 תקוע? לחץ לרענון
+  </button>
 </div>
 
 <!-- ══════════ AUTH ══════════ -->
@@ -4710,14 +4712,12 @@ async function forceUpdate() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Show "stuck?" button after 6 seconds if still on loading screen
+  // Show "stuck?" button after 7s if app view is still hidden (= stuck)
   setTimeout(() => {
-    const btn = document.getElementById('stuckBtn');
-    const loading = document.getElementById('vLoading');
-    if (btn && loading && loading.style.display !== 'none' && !loading.hidden) {
-      btn.style.display = 'block';
-    }
-  }, 6000);
+    const vApp = document.getElementById('vApp');
+    const btn  = document.getElementById('stuckBtn');
+    if (btn && vApp && vApp.hidden) btn.style.display = 'block';
+  }, 7000);
 });
 
 document.addEventListener('DOMContentLoaded', () => {
