@@ -2,7 +2,7 @@
   "name": "Family Location",
   "short_name": "FamilyLoc",
   "description": "מעקב מיקום משפחתי",
-  "version": "2.2.0",
+  "version": "2.4.0",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait",

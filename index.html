@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.3.0";
+const APP_VERSION        = "2.4.0";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -1024,7 +1024,9 @@ let isQuiet       = false;
 let tileLayer     = null;
 let sosActive     = false;
 let fcmToken      = null;  // Firebase Cloud Messaging registration token
-const VAPID_KEY   = 'BMREC3BSFf0Fp4qfTv8oglvpigNZlInb5nFO6LRll4aL-1ZSyyTmFVTIWCfZQ3Mqo2mv1Ah1SK9DVKo8w1scSj8';
+const VAPID_KEY   = 'BAGV-XjPMifuCV9LlzGbieJhwYIrxfzmVAzC3CPNBu6PDd7NB_a9Td3zZTAkgxKHhEfFJV3bpaVzXftEWLrR5SM';
+let _oauthToken   = null;  // cached OAuth2 access token for FCM v1
+let _oauthExpiry  = 0;     // unix-ms when token expires
 let unsubChat     = null;
 let unsubSOS      = null;
 let unreadChat    = 0;
@@ -1495,32 +1497,98 @@ async function initFCM() {
   }
 }
 
-// Send FCM push to a list of UIDs via their stored fcmTokens
-// Uses FCM REST API — requires the FCM server key stored in Firestore config
-async function sendFCMToUsers(uids, title, body, tag) {
-  if (!uids.length) return;
+// Get OAuth2 access token for FCM v1 API using service account stored in Firestore.
+// Service account fields needed in appConfig/fcm: { clientEmail, privateKey }
+async function getOAuthToken() {
+  if (_oauthToken && Date.now() < _oauthExpiry - 60000) return _oauthToken; // use cached
   try {
-    // Fetch FCM tokens for all target UIDs
+    const snap = await db.collection('appConfig').doc('fcm').get();
+    const cfg = snap.data();
+    if (!cfg?.clientEmail || !cfg?.privateKey) { console.warn('FCM: no service account in appConfig/fcm'); return null; }
+
+    const now = Math.floor(Date.now() / 1000);
+    const claim = {
+      iss: cfg.clientEmail,
+      scope: 'https://www.googleapis.com/auth/firebase.messaging',
+      aud: 'https://oauth2.googleapis.com/token',
+      exp: now + 3600,
+      iat: now
+    };
+
+    // Build JWT header.payload
+    const b64url = s => btoa(s).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
+    const header  = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+    const payload = b64url(JSON.stringify(claim));
+    const toSign  = header + '.' + payload;
+
+    // Import RSA private key (PKCS8)
+    const pemKey = cfg.privateKey.replace(/\\n/g, '\n');
+    const b64Key = pemKey.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\n/g, '');
+    const binKey = Uint8Array.from(atob(b64Key), c => c.charCodeAt(0));
+    const cryptoKey = await crypto.subtle.importKey(
+      'pkcs8', binKey.buffer,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false, ['sign']
+    );
+
+    // Sign and build JWT
+    const sigBuf = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, new TextEncoder().encode(toSign));
+    const sig    = b64url(String.fromCharCode(...new Uint8Array(sigBuf)));
+    const jwt    = toSign + '.' + sig;
+
+    // Exchange JWT for access token
+    const resp = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=' + jwt
+    });
+    const data = await resp.json();
+    if (!data.access_token) { console.warn('FCM: token exchange failed', data); return null; }
+
+    _oauthToken  = data.access_token;
+    _oauthExpiry = Date.now() + (data.expires_in || 3600) * 1000;
+    return _oauthToken;
+  } catch(e) { console.warn('FCM getOAuthToken error:', e); return null; }
+}
+
+// Send FCM push to a list of UIDs via FCM v1 API (OAuth2, no Legacy key needed)
+async function sendFCMToUsers(uids, title, body, tag) {
+  if (!uids || !uids.length) return;
+  try {
     const snaps = await Promise.all(uids.map(uid => db.collection('users').doc(uid).get()));
     const tokens = snaps.map(s => s.data()?.fcmToken).filter(Boolean);
     if (!tokens.length) return;
-    // Fetch FCM server key from Firestore config doc
-    const cfgSnap = await db.collection('appConfig').doc('fcm').get();
-    const serverKey = cfgSnap.data()?.serverKey;
-    if (!serverKey) return;
-    // Send to each token
-    await Promise.all(tokens.map(token =>
-      fetch('https://fcm.googleapis.com/fcm/send', {
+
+    const accessToken = await getOAuthToken();
+    if (!accessToken) return;
+
+    const isSOS = tag && tag.startsWith('sos');
+    const vibrate = isSOS ? [600,150,600,150,600,150,600,150,600,150,600] : [200,100,200];
+
+    await Promise.all(tokens.map(fcmTok =>
+      fetch('https://fcm.googleapis.com/v1/projects/location-56469/messages:send', {
         method: 'POST',
-        headers: { 'Authorization': 'key=' + serverKey, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: token,
-          notification: { title, body, icon: './icon.svg', badge: './icon.svg', tag, requireInteraction: tag.startsWith('sos') },
-          webpush: { notification: { vibrate: tag.startsWith('sos') ? [600,150,600,150,600,150,600,150,600] : [200,100,200] } }
+          message: {
+            token: fcmTok,
+            notification: { title, body },
+            webpush: {
+              headers: { Urgency: isSOS ? 'high' : 'normal' },
+              notification: {
+                icon: './icon.svg',
+                badge: './icon.svg',
+                tag,
+                requireInteraction: !!isSOS,
+                vibrate
+              },
+              fcm_options: { link: './' }
+            }
+          }
         })
-      }).catch(()=>{})
+      }).catch(e => console.warn('FCM send error:', e))
     ));
-  } catch(e) {}
+  } catch(e) { console.warn('sendFCMToUsers error:', e); }
 }
 
 async function initApp() {
@@ -4223,77 +4291,4 @@ function notifySpeedAlert(speed) {
   if (groupData?.adminUid && groupData.adminUid !== me.uid) {
     db.collection('adminNotifs').add({
       groupId, adminUid: groupData.adminUid,
-      type: 'speed', memberUid: me.uid,
-      memberName: myName,
-      speed: kmh, lat: myLat, lng: myLng,
-      ts: firebase.firestore.FieldValue.serverTimestamp(),
-      seen: false
-    }).catch(()=>{});
-  }
-}
-
-function onLogMemberChange(uid) {
-  logViewUid = uid || null;
-  loadLocationLog();
-}
-
-// ══════════════════════════════════════════════
-//  7-DAY HISTORY NAVIGATION
-// ══════════════════════════════════════════════
-function shiftMetricsDate(days) {
-  const picker = document.getElementById('metDatePicker');
-  if (!picker) return;
-  const current = picker.value || new Date().toISOString().slice(0,10);
-  const d = new Date(current);
-  d.setDate(d.getDate() + days);
-  const newDate = d.toISOString().slice(0,10);
-  const today = new Date().toISOString().slice(0,10);
-  if (newDate > today) return;
-  picker.value = newDate;
-  loadMetrics();
-}
-
-// ══════════════════════════════════════════════
-//  OFFLINE CACHE
-// ══════════════════════════════════════════════
-function cacheMembers() {
-  if (!groupId || !Object.keys(members).length) return;
-  try { localStorage.setItem(`fl_members_${groupId}`, JSON.stringify(members)); } catch(e) {}
-}
-
-function loadCachedMembers() {
-  if (!groupId) return;
-  try {
-    const raw = localStorage.getItem(`fl_members_${groupId}`);
-    if (raw) Object.assign(members, JSON.parse(raw));
-  } catch(e) {}
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const savedLang = localStorage.getItem('lang') || 'he';
-  lang = savedLang;
-  document.documentElement.setAttribute('lang', savedLang);
-  document.documentElement.setAttribute('dir', savedLang==='he'?'rtl':'ltr');
-  renderUI();
-  initFirebase();
-  initInstallPrompt();
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => registerPeriodicSync(reg))
-      .catch(() => {});
-    // Listen for SW-initiated location requests (Periodic Background Sync)
-    navigator.serviceWorker.addEventListener('message', e => {
-      if (e.data?.type === 'SW_REQUEST_LOCATION') {
-        if (myLat !== null) {
-          pushLocation(myLat, myLng, currentMotion);
-        } else {
-          navigator.geolocation?.getCurrentPosition(onPosition, onPosErr,
-            { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 });
-        }
-      }
-    });
-  }
-});
-</script>
-</body>
-</html>
+      
