@@ -32,7 +32,7 @@ self.addEventListener('fetch', e => {
   const url = e.request.url;
   if (url.includes('firestore') || url.includes('firebase') ||
       url.includes('openstreetmap') || url.includes('raw.githubusercontent')) {
-    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+    e.respondWith(fetch(e.request).catch(async () => { const c = await caches.match(e.request); return c || Response.error(); }));
     return;
   }
   if (e.request.method !== 'GET') return; // only cache GET
