@@ -1,7 +1,7 @@
 // ╔══════════════════════════════════════════╗
-// ║  Family Location — Service Worker v2.5.11 ║
+// ║  Family Location — Service Worker v2.5.12 ║
 // ╚══════════════════════════════════════════╝
-const CACHE = 'family-location-v2.5.11';
+const CACHE = 'family-location-v2.5.12';
 const ASSETS = [
   './',
   './index.html',
@@ -24,8 +24,6 @@ self.addEventListener('activate', e => {
     caches.keys()
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
-      .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
-      .then(clients => clients.forEach(client => client.navigate(client.url)))
   );
 });
 

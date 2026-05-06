@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.11";
+const APP_VERSION        = "2.5.12";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -641,7 +641,7 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.11</div>
+  <div class="lver" id="lVer">v2.5.12</div>
   <div class="lsp"></div>
 </div>
 
@@ -1334,19 +1334,19 @@ async function initFirebase() {
 }
 
 async function onAuth(user) {
+  const withTimeout = (p, ms) => Promise.race([p,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
   try {
     if (user) {
       me = user;
-      // Load or create user profile
+      // Single Firestore read with 10s timeout — prevents infinite hang
       const ref = db.collection('users').doc(me.uid);
-      const snap = await ref.get();
+      const snap = await withTimeout(ref.get(), 10000);
       if (!snap.exists) {
         await ref.set({ name: me.displayName || me.email.split('@')[0], email: me.email, createdAt: new Date() });
       }
-      myProfile = (await ref.get()).data();
-      // Check if user is in a group
-      const gSnap = await db.collection('users').doc(me.uid).get();
-      const gid = gSnap.data()?.groupId;
+      myProfile = snap.data() || {};
+      const gid = snap.data()?.groupId;
       if (gid) {
         groupId = gid;
         await initApp();
@@ -1361,9 +1361,8 @@ async function onAuth(user) {
     }
   } catch(e) {
     console.error('onAuth error:', e);
-    showView('vAuth');
-    renderUI();
-    showToast('Error: ' + e.message, 'err');
+    hideSplash(); showView('vAuth'); renderUI();
+    showToast('שגיאת חיבור — בדוק אינטרנט ונסה שוב', 'err');
   }
   hideSplash();
 }
