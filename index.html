@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.19";
+const APP_VERSION        = "2.5.20";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -642,8 +642,9 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.19</div>
+  <div class="lver" id="lVer">v2.5.20</div>
   <div class="lsp"></div>
+  <div id="dbgStep" style="color:rgba(255,255,255,0.35);font-size:10px;margin-top:10px;font-family:monospace;text-align:center;max-width:260px;padding:0 16px"></div>
 </div>
 
 
@@ -1031,6 +1032,18 @@ select.lang-sel{
   }
   setTimeout(activateStuckMode, 8000);
   setTimeout(activateStuckMode, 14000);
+  // Nuclear: after 16s force-close loading screen no matter what
+  setTimeout(function() {
+    var vL = document.getElementById('vLoading');
+    if (!vL || vL.hidden) return;
+    vL.style.opacity = '0';
+    setTimeout(function(){ vL.hidden = true; }, 500);
+    var vA = document.getElementById('vAuth');
+    if (vA) vA.hidden = false;
+    // Try app functions if available
+    try { if(typeof showView==='function') showView('vAuth'); } catch(e){}
+    try { if(typeof renderUI==='function') renderUI(); } catch(e){}
+  }, 16000);
 })();
 </script>
 <!-- defer: non-blocking download, executes in order before DOMContentLoaded -->
@@ -1355,13 +1368,16 @@ async function initFirebase() {
     auth = firebase.auth();
     db   = firebase.firestore();
 
+    dbg('Firebase מוכן — בדיקת משתמש...');
     // Fallback: if onAuthStateChanged never fires within 8s, show auth
     const splashTimeout = setTimeout(() => {
+      dbg('פג זמן — מעבר לכניסה');
       hideSplash(); showView('vAuth'); renderUI();
     }, 8000);
 
     auth.onAuthStateChanged(user => {
       clearTimeout(splashTimeout);
+      dbg(user ? 'משתמש מחובר' : 'לא מחובר');
       onAuth(user);
     });
   } catch(e) {
@@ -1371,27 +1387,54 @@ async function initFirebase() {
   }
 }
 
+// ── localStorage helpers for instant startup ──
+function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+function lsGet(k)  { try{ const v=localStorage.getItem(k); return v?JSON.parse(v):null; }catch(e){ return null; } }
+function dbg(msg)  { const el=document.getElementById('dbgStep'); if(el) el.textContent=msg; }
+
 async function onAuth(user) {
   const withTimeout = (p, ms) => Promise.race([p,
     new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
   try {
     if (user) {
       me = user;
+      dbg('מחובר — בודק מטמון...');
+
+      // ── FAST PATH: use localStorage cache for instant startup ──
+      const cached = lsGet('profile_' + me.uid);
+      if (cached && cached.groupId) {
+        groupId   = cached.groupId;
+        myProfile = cached;
+        dbg('מטמון נמצא — פותח אפליקציה...');
+        hideSplash();
+        await initApp();
+        // Then refresh from Firestore in background (no await)
+        refreshProfileBackground(user);
+        return;
+      }
+
+      // ── SLOW PATH: no cache, must fetch from Firestore ──
+      dbg('טוען פרופיל מהשרת...');
       const ref = db.collection('users').doc(me.uid);
-      // Try cache first, fall back to network with 5s timeout
       let snap;
       try {
-        snap = await withTimeout(ref.get({ source: 'cache' }), 1000);
+        snap = await withTimeout(ref.get({ source: 'cache' }), 1500);
+        dbg('פרופיל ממטמון Firebase');
       } catch(_) {
-        snap = await withTimeout(ref.get(), 5000);
+        dbg('מתחבר לשרת...');
+        snap = await withTimeout(ref.get(), 6000);
+        dbg('פרופיל התקבל');
       }
       if (!snap.exists) {
         await withTimeout(ref.set({ name: me.displayName || me.email.split('@')[0], email: me.email, createdAt: new Date() }), 5000).catch(()=>{});
+        snap = await withTimeout(ref.get({ source: 'cache' }), 2000).catch(() => snap);
       }
       myProfile = snap.data() || {};
+      lsSet('profile_' + me.uid, myProfile);   // save for next fast start
       const gid = myProfile.groupId;
       if (gid) {
         groupId = gid;
+        hideSplash();
         await initApp();
       } else {
         hideSplash(); showView('vOnboard'); renderUI();
@@ -1402,9 +1445,30 @@ async function onAuth(user) {
     }
   } catch(e) {
     console.error('onAuth error:', e.message);
+    dbg('שגיאה: ' + e.message);
     hideSplash(); showView('vAuth'); renderUI();
     showToast('שגיאת חיבור (' + e.message + ') — נסה שוב', 'err', 6000);
   }
+}
+
+// Refresh profile from Firestore silently after fast-path startup
+async function refreshProfileBackground(user) {
+  try {
+    const withTimeout = (p, ms) => Promise.race([p,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+    const ref = db.collection('users').doc(user.uid);
+    const snap = await withTimeout(ref.get(), 8000);
+    if (snap.exists) {
+      myProfile = snap.data() || {};
+      lsSet('profile_' + user.uid, myProfile);
+      // If groupId changed, re-init
+      if (myProfile.groupId && myProfile.groupId !== groupId) {
+        groupId = myProfile.groupId;
+        lsSet('profile_' + user.uid, myProfile);
+        location.reload();
+      }
+    }
+  } catch(e) { /* silent — fast path already loaded the app */ }
 }
 
 // ══════════════════════════════════════════════
@@ -4757,6 +4821,7 @@ document.addEventListener('DOMContentLoaded', () => {
   lang = savedLang;
   document.documentElement.setAttribute('lang', savedLang);
   document.documentElement.setAttribute('dir', savedLang==='he'?'rtl':'ltr');
+  dbg('קוד נטען — מאתחל...');
   renderUI();
   initFirebase();
   initInstallPrompt();
