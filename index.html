@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.8";
+const APP_VERSION        = "2.5.9";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -641,7 +641,7 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.8</div>
+  <div class="lver" id="lVer">v2.5.9</div>
   <div class="lsp"></div>
 </div>
 
@@ -1746,6 +1746,7 @@ function renderGroupTab() {
     // Section header
     const hdrBtns = `
       ${isAdm ? `<button class="small-btn" onclick="openRenameGroupFor('${gid}')" title="${t('renameGroup')}">✏️</button>` : ''}
+      ${isAdm ? `<button class="small-btn del" onclick="confirmDeleteGroup('${gid}','${esc(gd.name||gid)}')" title="מחק קבוצה">🗑️</button>` : ''}
       <button class="small-btn" onclick="openNotifHistory()">🔔</button>
       <button class="small-btn" onclick="showGroupCodeFor('${gid}','${esc(gd.joinCode||'')}')">#${esc(gd.joinCode||'')}</button>`;
 
@@ -1758,7 +1759,7 @@ function renderGroupTab() {
       const isMe = uid === me.uid;
       const isAdmMem = uid === gd.adminUid;
       const lastSeen = m.ts ? relativeTime(m.ts.toDate ? m.ts.toDate() : new Date(m.ts)) : '';
-      const batt = isMe ? myBattery : m.battery;
+      const batt = isMe ? getBatteryPct() : m.battery;
       const battStr = (batt !== null && batt !== undefined) ? ` · 🔋${batt}%` : '';
       const delBtn  = (isAdm && !isMe) ? `<button class="small-btn del" onclick="removeMemberFrom('${gid}','${uid}')">✕</button>` : '';
       const permBtn = (isAdm || isMe) ? `<button class="small-btn" onclick="openMemberPermissions('${uid}','${gid}')" title="${isMe ? t('myPerms') : 'הרשאות'}">🔒</button>` : '';
@@ -2938,6 +2939,54 @@ function copyCode(code) {
   navigator.clipboard?.writeText(code).then(() => showToast(t('codeCopied'),'ok'));
 }
 
+function confirmDeleteGroup(gid, name) {
+  openModal(`
+    <div class="mttl">🗑️ מחיקת קבוצה</div>
+    <div style="margin-bottom:16px;color:var(--text2);font-size:14px">
+      האם למחוק את הקבוצה <b>${esc(name)}</b>?<br>
+      <span style="color:var(--red);font-size:13px">פעולה זו תסיר את כל החברים ואת כל הנתונים של הקבוצה. לא ניתן לבטל.</span>
+    </div>
+    <div class="row mt16">
+      <button class="btn btn-s flex1" onclick="closeModal()">ביטול</button>
+      <button class="btn flex1" style="background:var(--red);color:#fff" onclick="deleteGroup('${gid}')">מחק קבוצה</button>
+    </div>`);
+}
+
+async function deleteGroup(gid) {
+  closeModal();
+  try {
+    showToast('🗑️ מוחק קבוצה...', 'ok', 3000);
+    const gd = allGroupsData[gid] || {};
+    // Remove groupId from all members
+    const memberUids = gd.members || [];
+    await Promise.all(memberUids.map(uid =>
+      db.collection('users').doc(uid).update({
+        groupId: firebase.firestore.FieldValue.delete(),
+        groups: firebase.firestore.FieldValue.arrayRemove(gid)
+      }).catch(() => {})
+    ));
+    // Delete group doc
+    await db.collection('groups').doc(gid).delete().catch(() => {});
+    // Remove from local state
+    delete allGroupsData[gid];
+    myGroupsList = myGroupsList.filter(g => g.id !== gid);
+    if (groupId === gid) {
+      const remaining = Object.keys(allGroupsData);
+      if (remaining.length > 0) {
+        groupId = remaining[0];
+        groupData = allGroupsData[groupId];
+        await db.collection('users').doc(me.uid).update({ groupId }).catch(() => {});
+      } else {
+        groupId = null; groupData = null;
+        stopTracking(); unsubAll();
+        showView('vOnboard'); renderUI(); return;
+      }
+    }
+    showToast('✅ הקבוצה נמחקה', 'ok');
+    renderGroupTab();
+  } catch(e) { showToast('שגיאה: ' + e.message, 'err'); }
+}
+
 async function leaveGroup() {
   if (!confirm(t('confirmLeave'))) return;
   try {
@@ -3638,9 +3687,22 @@ async function loadMetrics() {
       );
 
       let cardsHtml = '';
-      metricDocs.forEach(d => {
-        if (!d || !d.exists) return;
-        cardsHtml += renderMetricCard(d.data(), grpIsAdmin);
+      metricDocs.forEach((d, idx) => {
+        if (d && d.exists) {
+          cardsHtml += renderMetricCard(d.data(), grpIsAdmin);
+        } else if (grpIsAdmin) {
+          // Show empty placeholder card for members with no data today
+          const uid = memberUids[idx];
+          const mData = members[uid] || {};
+          const name = (uid === me?.uid ? myProfile?.name : null) || mData.name || uid.slice(0,8);
+          cardsHtml += `<div class="metric-card">
+            ${avatarHtml(uid, name, 44)}
+            <div style="flex:1">
+              <div class="metric-name">${esc(name)}</div>
+              <div style="font-size:12px;color:var(--text2)">${t('metNoData')}</div>
+            </div>
+          </div>`;
+        }
       });
       if (!cardsHtml) cardsHtml = `<div style="text-align:center;padding:14px;color:var(--text2)">${t('metNoData')}</div>`;
 
@@ -4592,77 +4654,4 @@ function notifySpeedAlert(speed) {
       memberName: myName,
       speed: kmh, lat: myLat, lng: myLng,
       ts: firebase.firestore.FieldValue.serverTimestamp(),
-      seen: false
-    }).catch(()=>{});
-  }
-}
-
-function onLogMemberChange(uid) {
-  logViewUid = uid || null;
-  loadLocationLog();
-}
-
-// ══════════════════════════════════════════════
-//  7-DAY HISTORY NAVIGATION
-// ══════════════════════════════════════════════
-function shiftMetricsDate(days) {
-  const picker = document.getElementById('metDatePicker');
-  if (!picker) return;
-  const current = picker.value || new Date().toISOString().slice(0,10);
-  const d = new Date(current);
-  d.setDate(d.getDate() + days);
-  const newDate = d.toISOString().slice(0,10);
-  const today = new Date().toISOString().slice(0,10);
-  if (newDate > today) return;
-  picker.value = newDate;
-  loadMetrics();
-}
-
-// ══════════════════════════════════════════════
-//  OFFLINE CACHE
-// ══════════════════════════════════════════════
-function cacheMembers() {
-  if (!groupId || !Object.keys(members).length) return;
-  try { localStorage.setItem(`fl_members_${groupId}`, JSON.stringify(members)); } catch(e) {}
-}
-
-function loadCachedMembers() {
-  if (!groupId) return;
-  try {
-    const raw = localStorage.getItem(`fl_members_${groupId}`);
-    if (raw) Object.assign(members, JSON.parse(raw));
-  } catch(e) {}
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const savedLang = localStorage.getItem('lang') || 'he';
-  lang = savedLang;
-  document.documentElement.setAttribute('lang', savedLang);
-  document.documentElement.setAttribute('dir', savedLang==='he'?'rtl':'ltr');
-  renderUI();
-  initFirebase();
-  initInstallPrompt();
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => registerPeriodicSync(reg))
-      .catch(() => {});
-    // Auto-reload when new SW activates (ensures users always get latest version)
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      window.location.reload();
-    });
-    // Listen for SW-initiated location requests (Periodic Background Sync)
-    navigator.serviceWorker.addEventListener('message', e => {
-      if (e.data?.type === 'SW_REQUEST_LOCATION') {
-        if (myLat !== null) {
-          pushLocation(myLat, myLng, currentMotion);
-        } else {
-          navigator.geolocation?.getCurrentPosition(onPosition, onPosErr,
-            { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 });
-        }
-      }
-    });
-  }
-});
-</script>
-</body>
-</html>
+  
