@@ -1,7 +1,7 @@
 // ╔══════════════════════════════════════════╗
-// ║  Family Location — Service Worker v2.5.21 ║
+// ║  Family Location — Service Worker v2.5.22 ║
 // ╚══════════════════════════════════════════╝
-const CACHE = 'family-location-v2.5.21';
+const CACHE = 'family-location-v2.5.22';
 const ASSETS = [
   './',
   './index.html',
