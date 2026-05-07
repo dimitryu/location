@@ -51,6 +51,13 @@ service cloud.firestore {
       match /groupEvents/{eid} {
         allow read, write: if isGroupMember(gid) || isGroupAdmin(gid);
       }
+
+      // Notification history — all group members read/write
+      match /notifications/{nid} {
+        allow read: if isGroupMember(gid) || isGroupAdmin(gid);
+        allow create: if isGroupMember(gid) || isGroupAdmin(gid);
+        allow delete: if isGroupAdmin(gid);
+      }
     }
 
     // ── Location tracking ──

@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.25";
+const APP_VERSION        = "2.5.26";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -642,7 +642,7 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.25</div>
+  <div class="lver" id="lVer">v2.5.26</div>
   <div class="lsp"></div>
   <div id="dbgStep" style="color:rgba(255,255,255,0.35);font-size:10px;margin-top:10px;font-family:monospace;text-align:center;max-width:260px;padding:0 16px"></div>
 </div>
@@ -1875,7 +1875,7 @@ function renderGroupTab() {
     const hdrBtns = `
       ${isAdm ? `<button class="small-btn" onclick="openRenameGroupFor('${gid}')" title="${t('renameGroup')}">✏️</button>` : ''}
       ${isAdm ? `<button class="small-btn del" onclick="confirmDeleteGroup('${gid}','${esc(gd.name||gid)}')" title="מחק קבוצה">🗑️</button>` : ''}
-      <button class="small-btn" onclick="openNotifHistory()">🔔</button>
+      <button class="small-btn" onclick="openNotifHistory('${gid}')">🔔</button>
       <button class="small-btn" onclick="showGroupCodeFor('${gid}','${esc(gd.joinCode||'')}')">#${esc(gd.joinCode||'')}</button>`;
 
     // Members list
@@ -4727,7 +4727,7 @@ function subNotifications() {
         }
       });
       updateNotifBell();
-    });
+    }, () => {}); // silent error handler — rules not yet deployed
 }
 
 function updateNotifBell() {
@@ -4735,13 +4735,18 @@ function updateNotifBell() {
   if (!bellBadge) return;
 }
 
-async function openNotifHistory() {
-  if (!groupId) return;
-  const isAdmin = groupData?.adminUid === me.uid;
-  let q = db.collection('groups').doc(groupId).collection('notifications')
+async function openNotifHistory(gid) {
+  const targetGid = gid || groupId;
+  if (!targetGid) return;
+  const targetGroup = allGroupsData[targetGid] || groupData;
+  const isAdmin = targetGroup?.adminUid === me?.uid;
+  let q = db.collection('groups').doc(targetGid).collection('notifications')
     .orderBy('ts','desc').limit(60);
   const snap = await q.get().catch(() => null);
-  if (!snap) return;
+  if (!snap) {
+    showToast('אין הרשאה לקרוא התראות — פרוס את firestore.rules', 'err', 5000);
+    return;
+  }
   const rows = snap.docs.map(d => {
     const n = d.data();
     if (!isAdmin && n.toUid && n.toUid !== me.uid && n.fromUid !== me.uid) return '';
@@ -4749,11 +4754,12 @@ async function openNotifHistory() {
     const typeIcon = n.type==='sos'?'🆘':n.type==='batteryLow'?'🔋':n.type==='speed'?'🚨':n.type==='arrival'?'📍':'🔔';
     return `<div class="notif-item">
       <div style="font-weight:700">${typeIcon} ${esc(n.msg||'')}</div>
-      <div class="notif-time">${esc(n.fromName||'')} Â· ${ts}</div>
+      <div class="notif-time">${esc(n.fromName||'')} · ${ts}</div>
     </div>`;
   }).join('');
+  const grpName = esc(targetGroup?.name || targetGid);
   openModal(`
-    <div class="mttl">🔔 ${t('notifHistory')}</div>
+    <div class="mttl">🔔 ${t('notifHistory')} — ${grpName}</div>
     <div style="max-height:60vh;overflow-y:auto;margin:0 -20px">
       ${rows || `<div style="text-align:center;padding:24px;color:var(--text2)">${t('noNotifs')}</div>`}
     </div>
