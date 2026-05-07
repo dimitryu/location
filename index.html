@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.20";
+const APP_VERSION        = "2.5.21";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -642,7 +642,7 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.20</div>
+  <div class="lver" id="lVer">v2.5.21</div>
   <div class="lsp"></div>
   <div id="dbgStep" style="color:rgba(255,255,255,0.35);font-size:10px;margin-top:10px;font-family:monospace;text-align:center;max-width:260px;padding:0 16px"></div>
 </div>
@@ -1046,12 +1046,7 @@ select.lang-sel{
   }, 16000);
 })();
 </script>
-<!-- defer: non-blocking download, executes in order before DOMContentLoaded -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js" defer></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js" defer></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js" defer></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js" defer></script>
+<!-- SDKs loaded dynamically in DOMContentLoaded -->
 
 <script>
 // ══════════════════════════════════════════════
@@ -1385,6 +1380,29 @@ async function initFirebase() {
     hideSplash(); showView('vAuth'); renderUI();
     showToast('Firebase error: ' + e.message, 'err');
   }
+}
+
+// ── Dynamic SDK loader ──────────────────────────────────────────────────
+function _loadScript(src) {
+  return new Promise(function(res, rej) {
+    if (document.querySelector('script[src="'+src+'"]')) { res(); return; }
+    var s = document.createElement('script');
+    s.src = src;
+    s.onload = function() { res(); };
+    s.onerror = function() { rej(new Error('load error: '+src.split('/').pop())); };
+    document.head.appendChild(s);
+  });
+}
+function loadSDK() {
+  var b = 'https://www.gstatic.com/firebasejs/9.23.0/';
+  return _loadScript(b+'firebase-app-compat.js')
+    .then(function(){ return _loadScript(b+'firebase-auth-compat.js'); })
+    .then(function(){ return _loadScript(b+'firebase-firestore-compat.js'); })
+    .then(function(){ return _loadScript(b+'firebase-messaging-compat.js'); });
+}
+function loadLeaflet() {
+  return typeof L !== 'undefined' ? Promise.resolve()
+    : _loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');
 }
 
 // ── localStorage helpers for instant startup ──
@@ -2128,9 +2146,10 @@ async function removeMember(uid) {
 // ══════════════════════════════════════════════
 //  MAP
 // ══════════════════════════════════════════════
-function initMap() {
+async function initMap() {
   if (mapInit) return;
   mapInit = true;
+  try { await loadLeaflet(); } catch(e) { console.error('Leaflet:',e); mapInit=false; return; }
   const el = document.getElementById('map');
   mapObj = L.map(el, { zoomControl: false, attributionControl: false })
     .setView([31.7683, 35.2137], 10);
@@ -4816,24 +4835,23 @@ async function forceUpdate() {
 
 // stuckBtn removed — loading screen itself is the tap target (see early inline script above)
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // Fires IMMEDIATELY — no blocking external scripts
   const savedLang = localStorage.getItem('lang') || 'he';
   lang = savedLang;
   document.documentElement.setAttribute('lang', savedLang);
   document.documentElement.setAttribute('dir', savedLang==='he'?'rtl':'ltr');
-  dbg('קוד נטען — מאתחל...');
+  dbg('\u{1F4E6} \u{05D8}\u{05D5}\u{05E2}\u{05DF} Firebase SDK...');
   renderUI();
-  initFirebase();
   initInstallPrompt();
+
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js')
       .then(reg => registerPeriodicSync(reg))
       .catch(() => {});
-    // Auto-reload when new SW activates (ensures users always get latest version)
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       window.location.reload();
     });
-    // Listen for SW-initiated location requests (Periodic Background Sync)
     navigator.serviceWorker.addEventListener('message', e => {
       if (e.data?.type === 'SW_REQUEST_LOCATION') {
         if (myLat !== null) {
@@ -4844,6 +4862,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     });
+  }
+
+  try {
+    await Promise.race([
+      loadSDK(),
+      new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('SDK timeout')); },12000); })
+    ]);
+    dbg('\u{2705} Firebase \u{05DE}\u{05D5}\u{05DB}\u{05DF}');
+    initFirebase();
+  } catch(e) {
+    console.error('SDK load error:', e.message);
+    dbg('⚠ \u{05E9}\u{05D2}\u{05D9}\u{05D0}\u{05EA} \u{05E8}\u{05E9}\u{05EA}: ' + e.message);
+    setTimeout(function(){
+      hideSplash(); showView('vAuth'); renderUI();
+      showToast('⚠️ Firebase \u{05DC}\u{05D0} \u{05E0}\u{05D8}\u{05E2}\u{05DF} — \u{05D1}\u{05D3}\u{05D5}\u{05E7} \u{05D7}\u{05D9}\u{05D1}\u{05D5}\u{05E8} \u{05D5}\u{05E0}\u{05E1}\u{05D4} \u{05E9}\u{05D5}\u{05D1}', 'err', 10000);
+    }, 500);
   }
 });
 </script>
