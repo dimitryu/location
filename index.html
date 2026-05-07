@@ -21,7 +21,7 @@
 // ╔══════════════════════════════════════════════════════════╗
 // ║  APP CONFIGURATION – Edit these values                   ║
 // ╚══════════════════════════════════════════════════════════╝
-const APP_VERSION        = "2.5.26";
+const APP_VERSION        = "2.5.27";
 const APP_NAME           = "Family Location";
 const LOCATION_UPDATE_MS = 30000;   // location push interval (ms)
 
@@ -642,7 +642,7 @@ select.lang-sel{
   <div class="ll">📍</div>
   <div class="lt" id="lTitle">Family Location</div>
   <div class="ls" id="lSub">מעקב מיקום משפחתי</div>
-  <div class="lver" id="lVer">v2.5.26</div>
+  <div class="lver" id="lVer">v2.5.27</div>
   <div class="lsp"></div>
   <div id="dbgStep" style="color:rgba(255,255,255,0.35);font-size:10px;margin-top:10px;font-family:monospace;text-align:center;max-width:260px;padding:0 16px"></div>
 </div>
@@ -1784,9 +1784,11 @@ async function loadGroup() {
   if (!groupId) { showView('vOnboard'); renderUI(); return; }
   // Load ALL groups the user belongs to
   const allGroupIds = [...new Set([groupId, ...(myProfile?.groups || [])])];
-  const grpSnaps = await Promise.all(allGroupIds.map(gid => db.collection('groups').doc(gid).get()));
+  const grpSnaps = await Promise.all(
+    allGroupIds.map(gid => db.collection('groups').doc(gid).get().catch(() => null))
+  );
   allGroupsData = {};
-  grpSnaps.forEach(s => { if (s.exists) allGroupsData[s.id] = s.data(); });
+  grpSnaps.forEach(s => { if (s && s.exists) allGroupsData[s.id] = s.data(); });
 
   // If ALL groups were deleted — clean up and go to onboarding
   if (Object.keys(allGroupsData).length === 0) {
